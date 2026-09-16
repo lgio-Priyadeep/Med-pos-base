@@ -1,5 +1,7 @@
 # Pharmacy POS — Architecture Spec (v1.5, Locked)
 
+
+
 *Changelog from v1.4: added `write-off` as a stock-move reason (store-local,
 offline-capable — reuses the existing event, no new type). Deletion
 (`deleted_at`) is now blocked while aggregate stock across all stores is
