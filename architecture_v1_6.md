@@ -339,4 +339,4 @@ If an employee is terminated while a store is offline, the Store Manager is empo
 - Automated WhatsApp/SMS delivery of GST invoices and credit notes to patients.
 
 ---
-*Status: Active (v1.6). Supersedes [architecture_v1_5.md](file:///c:/Users/surya/OneDrive/Desktop/med_pos/architecture_v1_5.md).*
+*Status: Active (v1.6). Supersedes [architecture_v1_5.md](file:///c:/Users/surya/OneDrive/Desktop/med_pos/_archive/Prev_iterations/Architecture/architecture_v1_5.md).*
