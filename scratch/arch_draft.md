@@ -9,20 +9,20 @@
 
 ## 1. Scope
 - Chain footprint: 2–5 physical retail stores (D-01).
-- Hybrid deployment: Offline-first with async background sync; direct master-data writes excluded (§4) (D-02).
+- Hybrid deployment: Offline-first architecture with asynchronous background sync, excluding direct master-data writes (§4) (D-02).
 - Counter scaling: Multi-counter LAN topology (1 Primary node + 1–3 Worker terminals) (D-03).
 - Single-store operators: Supported via Simple 2-role preset (§11) (D-04).
-- Operational scope: Billing, fractional dispensing, returns/exchanges, vendor returns (RTV), delivery challans, batch inventory, shift till reconciliation, and regulatory registers (Schedule H1 and Schedule X) (D-05).
+- Operational scope: Billing, fractional strip dispensing, sales returns/exchanges, vendor returns (RTV), delivery challans, batch inventory, shift till reconciliation, and regulatory registers (Schedule H1 and Schedule X) (D-05).
 
 ### Non-Goals
-Direct store-to-cloud master writes, cross-store voucher redemption, live B2B IRN e-invoicing, distributed multi-master consensus, automated supplier EDI, and optical prescription OCR are explicit non-goals for v1.6.5 (deferred to Phase 2.0, §18).
+Direct store cloud writes, cross-store voucher redemption, live B2B IRN e-invoicing, distributed multi-master consensus, automated supplier EDI, and optical prescription OCR are explicit non-goals for v1.6.5 (deferred to Phase 2.0, §18).
 
 ---
 
 ## 2. Tech Stack & Edge Infrastructure
 - **Backend & DB**: Python/FastAPI across store and Central nodes (D-06). Central DB runs cloud Postgres (D-07); Counter 1 (Primary) runs local Postgres 16 (D-08).
 - **Multi-Counter LAN**:
-  - *Counter 1 (Primary)*: Single sequence authority committing to Postgres on `127.0.0.1` (D-09). Store FastAPI binds `0.0.0.0:8000` via store-scoped self-signed TLS (HTTPS) (D-10), broadcasting via mDNS as `medpos-primary.local:8000` with pinned certificate fingerprint validation on worker terminals (D-11). The store certificate (10-year validity) replicates to Counter 2 standby during setup, eliminating promotion mismatch.
+  - *Counter 1 (Primary)*: Single sequence authority committing to Postgres on `127.0.0.1` (D-09). Store FastAPI binds `0.0.0.0:8000` via store-scoped self-signed TLS (HTTPS) (D-10), broadcasting via mDNS as `medpos-primary.local:8000` with pinned certificate fingerprint validation on worker terminals (D-11). The store-scoped certificate (10-year validity) replicates to Counter 2 standby during setup, eliminating failover fingerprint mismatch.
   - *Counters 2/3 (Workers)*: UI shells connecting to Counter 1 over LAN via REST/WebSockets with zero local databases (D-12).
   - *Standby & Failover*: Counter 2 warm standby receives daily backups and WAL streaming from Counter 1 (D-13). Promotion script (`promote_to_primary.bat`) fences Counter 1 via LAN ping to prevent split-brain (D-14). `[DEFERRED → Doc 5: Standby Promotion Script & Fencing State Machine]` Promoted standby adopts epoch `<STORE_CODE>-INV-YYYYMM-XXXX-F1` jumping sequence +100,000 to eliminate invoice collisions on hardware loss (§8) (D-15).
 - **Local Auth**: Replicated Argon2id hashes issue store-scoped JWTs (8–12h shift TTL) locally (D-16) for 100% auth autonomy during outages and reboots (D-17). `[DEFERRED → Doc 9: Local Auth JWT Claim Schema & Argon2id Hash Parameters]`
@@ -61,27 +61,32 @@ Every mutation commits as an immutable append-only event: `event_id` (UUIDv4 PK)
 Central ingests store event batches sequentially in a single atomic transaction (`BEGIN...COMMIT`) with sequence watermarks ensuring consistency (D-38) and idempotency via `ON CONFLICT (event_id) DO NOTHING` (D-39). Poison-pill malformed events isolate into `central_sync_quarantine` with `sync-quarantine-tombstone` records in `central_events` preserving sequence continuity without blocking store retry queues (D-40). Central acknowledgment returns committed watermarks and quarantined IDs to unblock store queues while flagging audit issues (D-41). `[DEFERRED → Doc 1: Central Sync & Quarantine Table Schemas]` `[DEFERRED → Doc 3: Central Ingestion Batch Endpoint Contract]`
 
 ### Event Types
-The system defines 20 domain event types: inbound inventory (`grn`), sales & credit (`sale`, `b2b-sale`, `credit-note-redemption`), returns (`sale-return`), dispensing (`dispense`), stock movements (`stock-move`), shift operations (`shift-open`, `shift-close`, `shift-force-close`), operational directories (`patient-created`, `doctor-created`), master data (`discount-edit`, `master-data-edit`, `master-data-created`, `master-data-change-requested`, `master-data-change-approved`, `master-data-change-rejected`), and administration (`low-stock-alert`, `settings-change`) (D-42). Store event processing enforces `ON CONFLICT (event_id) DO NOTHING` on local `grn` execution to prevent double-stock inflation during crash recovery. Includes `sync-quarantine-tombstone` for malformed payloads. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–20 & Tombstones]`
+The system defines 19 domain event types: inbound inventory (`grn`), sales & credit (`sale`, `b2b-sale`, `credit-note-redemption`), returns (`sale-return`), dispensing (`dispense`), stock movements (`stock-move`), shift operations (`shift-open`, `shift-close`, `shift-force-close`), operational directories (`patient-created`, `doctor-created`), master data (`discount-edit`, `master-data-edit`, `master-data-created`, `master-data-change-requested`, `master-data-change-approved`, `master-data-change-rejected`), and administration (`low-stock-alert`, `settings-change`) (D-42). Store event processing enforces `ON CONFLICT (event_id) DO NOTHING` on local `grn` execution to prevent double-stock inflation during crash recovery. Includes `sync-quarantine-tombstone` for malformed payloads. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–19 & Tombstones]`
 
 ---
 
 ## 6. Stock, Inventory Lifecycle & Batch Mechanics
 
 ### Unit of Measure (UOM) Hierarchy & Fractional Billing
-- **Integer Base Units**: Stock is stored exclusively in integer Base Dispensing Units (`tablets`, `capsules`, `ml`, `vials`); decimals prohibited (D-43).
-- **Packaging Immutability**: `packaging_unit`, `base_unit`, and `pack_size` lock immutably at GRN, isolating stock counts from catalog edits (D-44). `[DEFERRED → Doc 1: Batch Table UOM Field Schema & Constraints]`
-- **Dual Representation**: Pack Qty is integer division ($\\text{Base} // \\text{Pack Size}$); loose units are modulo ($\\text{Base} \\pmod{\\text{Pack Size}}$) (D-45).
-- **Pricing & Clamping**: Loose unit price is rounded half-up ($\\operatorname{ROUND\\_HALF\\_UP}(\\text{Strip MRP} / \\text{Pack Size}, 2)$) (D-46). Subtotal clamps to $\\min(\\text{Loose Qty} \\times \\text{Unit Price}, \\text{Strip MRP})$ (D-47). `[DEFERRED → Doc 11: Legal Metrology Rule 2011 & Schedule Compliance Glossary]`
-- **Barcode & Returns**: Barcode scans bill 1 Packaging Unit (D-48). Sealed blister cavities restock ($+\\text{Loose Qty}$); damaged cavities route to `quarantine-write-off` (D-49).
+- **Integer Base-Unit Invariant**: Inventory stored strictly in integer Base Dispensing Units (`tablets`, `capsules`, `ml`, `vials`); decimals prohibited in storage (D-43).
+- **Batch Packaging Immutability**: `packaging_unit`, `base_unit`, and `pack_size` lock immutably on Batch at GRN, isolating stock counts from catalog edits (D-44). `[DEFERRED → Doc 1: Batch Table UOM Field Schema & Constraints]`
+- **Dual-Representation Math**: Pack Qty derived via integer division ($\text{Base} // \text{Pack Size}$); loose units via modulo ($\text{Base} \pmod{\text{Pack Size}}$) (D-45).
+- **Legal Metrology Pricing**: Base unit price rounded half-up: $\operatorname{ROUND\_HALF\_UP}(\text{Strip MRP} / \text{Pack Size}, 2)$ (D-46). `[DEFERRED → Doc 11: Legal Metrology Rule 2011 & Schedule Compliance Glossary]`
+- **Price Clamping**: Loose subtotal clamped to $\min(\text{Loose Qty} \times \text{Unit Price}, \text{Strip MRP})$; full pack bills Strip MRP preventing rounding overcharges (D-47).
+- **Barcode Default**: Barcode scans bill 1 Packaging Unit ($1 \times \text{pack\_size}$ base units); loose units require explicit UI entry (D-48).
+- **Fractional Returns**: Intact blister cavities restock to active inventory ($+\text{Loose Qty}$); damaged cavities route to `quarantine-write-off` (D-49).
 
-### Near-Expiry Vendor Returns (RTV) & Transfers
-- **RTV Alerts**: Expiry tiers: 90d Amber (FEFO), 60d Orange (RTV packing), 30d Red (quarantine) (D-50). Pharmacists execute `stock-move: rtv-quarantine`, generating sequential GST Debit Notes (§8) (D-51).
-- **Transfers & Challans**: Intra-state branch moves require Rule 55 Delivery Challans (D-52); inter-state requires IGST Tax Invoices (§8) (D-53). Store `transfer-receive` splits intact (`received_qty`), breakage (quarantine write-off with photo) (D-54), and shortage (shrinkage audit). Dispatch decrements source; receive increments destination (D-55). `[DEFERRED → Doc 5: Batch Picking, Fractional Return Inspection & RTV State Machines]`
+### Near-Expiry Vendor Returns (RTV) & Alerts
+Shelf expiry alerts trigger in tiers ($\Delta t = \text{expiry\_date} - \text{current\_date}$): 90d Amber (FEFO), 60d Orange (RTV packing), 30d Red (shelf quarantine) (D-50). Pharmacists execute `stock-move: rtv-quarantine` generating sequential GST Debit Notes (§8) (D-51).
+
+### Inter-Store Stock Transfers & Statutory Delivery Challans
+Branch road transit requires Rule 55 Delivery Challans (D-52) for intra-state transfers (identical GSTIN); inter-state moves require IGST Tax Invoices (§8) (D-53). Store `transfer-receive` splits intact stock (`received_qty`), breakage (quarantine write-off with photo) (D-54), and shortage (shrinkage audit). Dispatch decrements source stock; receive increments destination stock (D-55). `[DEFERRED → Doc 5: Batch Picking, Fractional Return Inspection & RTV State Machines]`
 
 ### Batch Picking & Stock Integrity
-- **Picking**: Defaults to FEFO (earliest expiry, stock $> 0$) (D-56). 2D DataMatrix scans override FEFO (D-57). Multi-batch splits trigger when request exceeds selected batch stock (D-58).
-- **Non-Negative Stock**: Stock must remain $\\ge 0$ (D-59). Discrepancies resolve via Manager-authorized `stock-move: adjustment-in` logging to Central Shrinkage (D-60).
-- **Returns & Soft-Delete**: Returns require invoice/batch validation; sealed restocks (D-61); expired or broken cold-chain routes to `quarantine-write-off` (D-62). Soft-deletion requires zero chain stock (D-35); offline partition sales auto-clear deletion (`deleted_at = null`) if stock remains (D-63) (D-64). `[DEFERRED → Doc 6: Partition Ghost-Stock Ingestion & Auto-Resurrection Scenarios]`
+- **Batch Picking**: Defaults to FEFO (earliest expiry, stock $> 0$) (D-56). 2D GS1 DataMatrix scans strictly override FEFO ensuring physical/invoiced parity (D-57). Multi-batch line split triggers automatically if requested qty exceeds selected batch stock (D-58).
+- **Non-Negative Stock**: Stock must remain $\ge 0$ (D-59). If physical stock exists but system displays 0, Manager PIN triggers `stock-move: adjustment-in`, logging to Central Shrinkage (D-60).
+- **Sales Returns**: Validated against invoice and batch; sealed items restock to active inventory (D-61); expired batches or broken cold-chain route to `quarantine-write-off` (D-62).
+- **Soft-Delete Invariant**: Products cannot be soft-deleted while chain stock $> 0$ (D-35). Central accepts offline sales of soft-deleted items (D-63), auto-clearing deletion (`deleted_at = null`) if partition sales reveal remaining stock (D-64). `[DEFERRED → Doc 6: Partition Ghost-Stock Ingestion & Auto-Resurrection Scenarios]`
 
 ---
 
@@ -111,13 +116,13 @@ Manual Insurance / TPA tender metadata fields (Insurer Name, Policy Number, Pre-
 ## 10. Regulatory Compliance (India, Drugs & Cosmetics Act)
 
 ### 10.1 Absolute Expiry Hard-Block
-Under Drugs & Cosmetics Act 1940 (Sections 18(a)(i), 27), stocking or selling expired drugs is a strict liability criminal offense. Batches with $\\text{expiry\\_date} < (\\text{CURRENT\\_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'})::\\text{DATE}$ are unconditionally blocked from billing and dispensing across both Mandatory and Optional compliance modes (D-81), with zero bypass allowance for cashiers, pharmacists, or managers (D-82). Batches remain valid through the final day of their declared expiry month; at 00:00:00 IST on the subsequent day, hard-block unconditionally triggers. Optional mode relaxes only non-statutory metadata.
+Under Drugs & Cosmetics Act 1940 (Sections 18(a)(i), 27), stocking or selling expired drugs is a strict liability criminal offense. Batches with $\text{expiry\_date} < (\text{CURRENT\_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'})::\text{DATE}$ are unconditionally blocked from billing and dispensing across both Mandatory and Optional compliance modes (D-81), with zero bypass allowance for cashiers, pharmacists, or managers (D-82). Batches remain valid through the final day of their declared expiry month; at 00:00:00 IST on the subsequent day, hard-block unconditionally triggers. Optional mode relaxes only non-statutory metadata.
 
 ### 10.2 Schedule H1 Register Completeness
 Rule 65(9) mandates an immutable 3-year register capturing 7 mandatory parameters: supply date/time, patient name/address, doctor name/address/registration, drug brand/generic, batch/manufacturer, quantity/pack size, and dispensing pharmacist PIN (D-83). Supports one-click Drug Inspector export (CSV/PDF) (D-84). Postgres enforces `REVOKE UPDATE, DELETE ON dispense_events` (§16) (D-85). `[DEFERRED → Doc 1: Schedule H1 Register & Schedule X Ledger Table Schemas]` `[DEFERRED → Doc 2: Dispense Event Schedule H1/X Audit Payload Schema]`
 
 ### 10.3 Schedule X & NDPS Dual-Prescription Custody & Bound Ledger
-Rule 65(4) mandates digital scan or photo capture of duplicate prescriptions (D-86). Images compressed to 150–200 DPI WebP (<250 KB), AES-256 encrypted, with 90-day edge retention and 2-year Central cloud archival (D-87). `[DEFERRED → Doc 9: Prescription Image AES-256 Storage & Retention Specification]` Dispensing strictly binds registered Pharmacist credentials via Tier B Full Argon2id Password verification and State Council credentials (D-88), establishing statutory non-repudiation. Enforces automated immutable Daily Running Balance Ledger ($\\text{Opening} + \\text{Receipts} - \\text{Dispensed} = \\text{Closing}$) (D-89) with one-click export for Assistant Drugs Controller (D-90).
+Rule 65(4) mandates digital scan or photo capture of duplicate prescriptions (D-86). Images compressed to 150–200 DPI WebP (<250 KB), AES-256 encrypted, with 90-day edge retention and 2-year Central cloud archival (D-87). `[DEFERRED → Doc 9: Prescription Image AES-256 Storage & Retention Specification]` Dispensing strictly binds registered Pharmacist credentials via Tier B Full Argon2id Password verification and State Council credentials (D-88), establishing statutory non-repudiation. Enforces automated immutable Daily Running Balance Ledger ($\text{Opening} + \text{Receipts} - \text{Dispensed} = \text{Closing}$) (D-89) with one-click export for Assistant Drugs Controller (D-90).
 
 ---
 
@@ -136,13 +141,13 @@ Store Managers can locally disable compromised user accounts directly on Store F
 
 ## 12. Master-Data Change Request Flow (Full Preset Only)
 Direct edit/create/delete authority is restricted strictly to Admin via live connection (§4) (D-96). Managers submit change requests for catalog, pricing, and tax (excluding discounts, which managers edit directly under §9) (D-97). Requests are scoped to single-field, single-record diffs (`field_name`, `current_value`, `expected_version`, `proposed_value`) (D-98). `[DEFERRED → Doc 2: Master-Data Change Request Payload Schema]`
-Deletion requests reuse the edit mechanism (`field_name: deleted_at`), gated by chain-wide zero-stock verification (D-99). Request workflow states: `pending` $\\rightarrow$ `approved` / `rejected` (reasons: `manual`, `stale`, `duplicate`, `stock-remaining`) (D-100). Central auto-rejects stale edits on version mismatch and duplicate creates on unique business key collision (D-101). `[DEFERRED → Doc 5: Master-Data Change Request State Machine]`
+Deletion requests reuse the edit mechanism (`field_name: deleted_at`), gated by chain-wide zero-stock verification (D-99). Request workflow states: `pending` $\rightarrow$ `approved` / `rejected` (reasons: `manual`, `stale`, `duplicate`, `stock-remaining`) (D-100). Central auto-rejects stale edits on version mismatch and duplicate creates on unique business key collision (D-101). `[DEFERRED → Doc 5: Master-Data Change Request State Machine]`
 
 ---
 
 ## 13. Shift Management & Day-End Till Reconciliation (Z-Report)
 Cashiers share counters; shift unlocks upon login and opening float entry (`shift-open`) (D-102), tracking Cash, Card, UPI, and Note tenders.
-At shift close, cashier enters blind cash declaration; system calculates Till Variance: $\\text{Variance} = \\text{Declared Cash} - (\\text{Opening Float} + \\text{Cash Sales} - \\text{Cash Refunds})$ (D-103). To eliminate false shortage alerts upon return redemptions, `Cash Sales` strictly isolates physical cash tenders (`sum(tender_split.cash)`), excluding store credit voucher redemptions and digital tenders; `Cash Refunds` strictly isolates physical cash returns. Day-End Z-Report generated at closing summarizes sales, tax, tenders, returns, debit notes, and variances (D-104). `[DEFERRED → Doc 1: Shift Session & Z-Report Table Schemas]`
+At shift close, cashier enters blind cash declaration; system calculates Till Variance: $\text{Variance} = \text{Declared Cash} - (\text{Opening Float} + \text{Cash Sales} - \text{Cash Refunds})$ (D-103). To eliminate false shortage alerts upon return redemptions, `Cash Sales` strictly isolates physical cash tenders (`sum(tender_split.cash)`), excluding store credit voucher redemptions and digital tenders; `Cash Refunds` strictly isolates physical cash returns. Day-End Z-Report generated at closing summarizes sales, tax, tenders, returns, debit notes, and variances (D-104). `[DEFERRED → Doc 1: Shift Session & Z-Report Table Schemas]`
 Managers can force-close abandoned shifts with an audit note (`shift-force-close`) to unblock counters (D-105). `[DEFERRED → Doc 5: Shift Lifecycle & Till Reconciliation State Machine]`
 
 ---
@@ -154,12 +159,12 @@ The system enforces an automated unit and integration testing suite covering leg
 
 ## 15. Observability & Telemetry
 Structured JSON logging with correlation IDs tracks store events, sync attempts, printer status, and manager overrides (D-107). `[DEFERRED → Doc 9: Structured Log Schema & Audit Correlation ID Spec]`
-Continuous telemetry tracks queue depth/lag, poison-pill rate, LAN latency, printer jams, and till variances (D-108). Automated alerts fire on sync offline $> 30$ min, poison pills, till shortage $> \\text{₹}500$, and disk storage $> 80\\%$ (D-109). `[DEFERRED → Doc 10: Operational Telemetry Metrics & Alerting Thresholds]`
+Continuous telemetry tracks queue depth/lag, poison-pill rate, LAN latency, printer jams, and till variances (D-108). Automated alerts fire on sync offline $> 30$ min, poison pills, till shortage $> \text{₹}500$, and disk storage $> 80\%$ (D-109). `[DEFERRED → Doc 10: Operational Telemetry Metrics & Alerting Thresholds]`
 
 ---
 
 ## 16. Security & Data Protection
-Credentials use Argon2id hashes with store-level salting (D-110). Store Postgres binds strictly to `127.0.0.1` (§2). Store LAN traffic is encrypted in-transit via self-signed TLS (HTTPS); terminal API calls pass store-scoped JWTs (D-111). Windows file permissions locked via `icacls` restricting database keys and config files strictly to `NT SERVICE\\MedPOS` with zero access for standard accounts (D-112). `[DEFERRED → Doc 9: Edge Security Hardening, Windows File ACLs & Encryption Spec]`
+Credentials use Argon2id hashes with store-level salting (D-110). Store Postgres binds strictly to `127.0.0.1` (§2). Store LAN traffic is encrypted in-transit via self-signed TLS (HTTPS); terminal API calls pass store-scoped JWTs (D-111). Windows file permissions locked via `icacls` restricting database keys and config files strictly to `NT SERVICE\MedPOS` with zero access for standard accounts (D-112). `[DEFERRED → Doc 9: Edge Security Hardening, Windows File ACLs & Encryption Spec]`
 DPDP Act 2023 compliance: Patient PII and prescription scans encrypted at rest via AES-256 (D-113) with 90-day rolling edge retention (§10.3) (D-114). Audit immutability: Dispense logs, invoices, credit/debit notes, challans, and stock adjustments enforce append-only storage via `REVOKE UPDATE, DELETE` (D-115).
 
 ---
@@ -190,7 +195,7 @@ Enterprise capabilities deferred to Phase 2.0 with interim bridges codified in v
 6. `[DEFERRED → Doc 1: Shift Session & Z-Report Table Schemas]`
 
 ### Doc 2: Event Schema
-7. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–20 & Tombstones]`
+7. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–19 & Tombstones]`
 8. `[DEFERRED → Doc 2: Dispense Event Schedule H1/X Audit Payload Schema]`
 9. `[DEFERRED → Doc 2: Master-Data Change Request Payload Schema]`
 

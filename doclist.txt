@@ -1,0 +1,48 @@
+Doclist (These will be generated after Architecture Doc is Finalised and Locked. The main purpose of these docs are modular info and decision storage and that the Architecture doc does not get infinitely large)
+
+Data Schema Doc
+Every table, field, type, constraint, per module
+FK relationships, per-store vs central tables marked
+Prevents: ambiguous data shape, mismatched types across modules
+Event Schema Doc
+Payload structure for each event type (sale, dispense, stock-move, discount-edit, low-stock-alert, settings-change)
+Versioning rule for future field additions
+Prevents: sync breakage, event misinterpretation between store/central
+API Contract Doc
+Endpoint list, method, request/response schema, error codes
+Per endpoint: which role can call it
+Prevents: undocumented endpoints, silent permission gaps
+RBAC Permission Matrix
+Rows = roles (4-role + 2-role preset), columns = actions
+Explicit yes/no per cell, no "implied" access
+Prevents: privilege creep, cashier-can-dispense type bugs
+Critical Flow State Machines
+One per flow: dispensing (with H1 register), sync cycle, discount-edit, compliance-mode switch
+States, transitions, what blocks what
+Prevents: skipped steps, race conditions in flow logic
+Conflict & Edge Case Matrix
+Scenario vs expected behavior table
+Cover: offline N days, duplicate sync, expired-batch sale attempt, mid-session compliance toggle, simultaneous store+central write
+Prevents: undefined behavior under real-world failure
+Dependency Map
+Module → module dependencies, build order
+What breaks if X isn't built yet
+Prevents: building in wrong order, circular dependency surprises
+Test Plan Doc
+Every business rule → unit test case
+Every flow → integration test case
+Edge cases from doc 6 → explicit test cases
+Prevents: untested logic paths reaching production
+Security & Audit Log Spec
+Which events are immutable, which fields never exposed in API responses
+Input validation rules per endpoint
+Prevents: audit tampering, data leaks
+Deployment & Rollout Plan
+Feature flag list, canary store choice, rollback steps
+Go/no-go checklist per stage
+Prevents: full-chain breakage from one bad release
+Glossary
+Domain terms: Schedule H1, GST invoice rules, discount preset vs override, event vs transaction
+Prevents: coding agent (or you, later) misreading domain terms
+
+Docs 1-4 unblock coding. Docs 5-7 unblock complex-flow work. Docs 8-10 gate before any deployment. Doc 11 governs statutory terminology.

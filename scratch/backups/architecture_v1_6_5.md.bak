@@ -61,7 +61,7 @@ Every mutation commits as an immutable append-only event: `event_id` (UUIDv4 PK)
 Central ingests store event batches sequentially in a single atomic transaction (`BEGIN...COMMIT`) with sequence watermarks ensuring consistency (D-38) and idempotency via `ON CONFLICT (event_id) DO NOTHING` (D-39). Poison-pill malformed events isolate into `central_sync_quarantine` with `sync-quarantine-tombstone` records in `central_events` preserving sequence continuity without blocking store retry queues (D-40). Central acknowledgment returns committed watermarks and quarantined IDs to unblock store queues while flagging audit issues (D-41). `[DEFERRED → Doc 1: Central Sync & Quarantine Table Schemas]` `[DEFERRED → Doc 3: Central Ingestion Batch Endpoint Contract]`
 
 ### Event Types
-The system defines 20 domain event types: inbound inventory (`grn`), sales & credit (`sale`, `b2b-sale`, `credit-note-redemption`), returns (`sale-return`), dispensing (`dispense`), stock movements (`stock-move`), shift operations (`shift-open`, `shift-close`, `shift-force-close`), operational directories (`patient-created`, `doctor-created`), master data (`discount-edit`, `master-data-edit`, `master-data-created`, `master-data-change-requested`, `master-data-change-approved`, `master-data-change-rejected`), and administration (`low-stock-alert`, `settings-change`) (D-42). Store event processing enforces `ON CONFLICT (event_id) DO NOTHING` on local `grn` execution to prevent double-stock inflation during crash recovery. Includes `sync-quarantine-tombstone` for malformed payloads. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–20 & Tombstones]`
+The system defines 19 domain event types: inbound inventory (`grn`), sales & credit (`sale`, `b2b-sale`, `credit-note-redemption`), returns (`sale-return`), dispensing (`dispense`), stock movements (`stock-move`), shift operations (`shift-open`, `shift-close`, `shift-force-close`), operational directories (`patient-created`, `doctor-created`), master data (`discount-edit`, `master-data-edit`, `master-data-created`, `master-data-change-requested`, `master-data-change-approved`, `master-data-change-rejected`), and administration (`low-stock-alert`, `settings-change`) (D-42). Store event processing enforces `ON CONFLICT (event_id) DO NOTHING` on local `grn` execution to prevent double-stock inflation during crash recovery. Includes `sync-quarantine-tombstone` for malformed payloads. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–19 & Tombstones]`
 
 ---
 
@@ -190,7 +190,7 @@ Enterprise capabilities deferred to Phase 2.0 with interim bridges codified in v
 6. `[DEFERRED → Doc 1: Shift Session & Z-Report Table Schemas]`
 
 ### Doc 2: Event Schema
-7. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–20 & Tombstones]`
+7. `[DEFERRED → Doc 2: Full Event Payload Schemas for Events 1–19 & Tombstones]`
 8. `[DEFERRED → Doc 2: Dispense Event Schedule H1/X Audit Payload Schema]`
 9. `[DEFERRED → Doc 2: Master-Data Change Request Payload Schema]`
 
