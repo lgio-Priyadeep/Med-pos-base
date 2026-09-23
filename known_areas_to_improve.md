@@ -3,16 +3,20 @@
 This document serves as the authoritative, living engineering registry tracking architectural gaps, retail edge cases, regulatory requirements, and technical enhancements for the Pharmacy POS system.
 
 The document is organized into four distinct sections:
-- **[Active Engineering Roadmap: Short-Scope Iterations (v1.6.6+)](#short-scope-iterations-v166)**: 60 verified tactical enhancements sequenced across 4 cautious implementation tiers with explicit dependency chains, mathematical invariants, and second-order defensive safeguards.
-- **[Part I: Active Architectural Gaps & Improvement Roadmap (v1.6.5 → v2.0 Enterprise Scope)](#part-i-active-architectural-gaps--improvement-roadmap-v165--v20-enterprise-scope)**: Detailed analysis of enterprise capabilities intentionally deferred for the V2 Major Iteration (Multi-Store Enterprise Chain Scale).
+- **[Engineering Milestone: Short-Scope Tactical Baseline (Resolved in v1.6.6)](#short-scope-iterations-resolved-in-v166)**: 60 verified tactical enhancements sequenced across 4 cautious implementation tiers, now codified into Architecture Spec v1.6.6 and ROUTED-DETAIL.md.
+- **[Part I: Active Architectural Gaps & Improvement Roadmap (v1.6.6 → v2.0 Enterprise Scope)](#part-i-active-architectural-gaps--improvement-roadmap-v166--v20-enterprise-scope)**: Detailed analysis of enterprise capabilities intentionally deferred for the V2 Major Iteration (Multi-Store Enterprise Chain Scale).
 - **[Part II: Active Priority vs. Complexity Roadmap Matrix (Track B: Deferred for V2)](#part-ii-active-priority-vs-complexity-roadmap-matrix-track-b-deferred-for-v2)**: Strategic matrix defining the 12 enterprise capabilities targeted for Phase 2.0.
 - **[Part III: Historical Milestone Archive](#part-iii-historical-milestone-archive)**:
-  - **[Section A: v1.6 → v1.6.5 Resolved Baseline](#section-a-v16--v165-resolved-baseline)**: Verified record of the 8 Track A items, 4 interim bridges, and 8 defensive operational safeguards codified into [architecture_v1_6_5.md](architecture_v1_6_5.md).
-  - **[Section B: v1.5 → v1.6 Resolved Baseline](#section-b-v15--v16-resolved-baseline)**: Verified record of the 12 core improvements and 8 operational safeguards codified into historical [_archive/Prev_iterations/Architecture/architecture_v1_6.md](_archive/Prev_iterations/Architecture/architecture_v1_6.md).
+  - **[Section A: v1.6.5 → v1.6.6 Resolved Baseline](#section-a-v165--v166-resolved-baseline)**: Verified record of the 60 verified tactical patch items across Tiers 1–4 codified into [architecture_v1_6_6.md](architecture_v1_6_6.md) and [ROUTED-DETAIL.md](ROUTED-DETAIL.md).
+  - **[Section B: v1.6 → v1.6.5 Resolved Baseline](#section-b-v16--v165-resolved-baseline)**: Verified record of the 8 Track A items, 4 interim bridges, and 8 defensive operational safeguards codified into [architecture_v1_6_5.md](architecture_v1_6_5.md).
+  - **[Section C: v1.5 → v1.6 Resolved Baseline](#section-c-v15--v16-resolved-baseline)**: Verified record of the 12 core improvements and 8 operational safeguards codified into historical [_archive/Prev_iterations/Architecture/architecture_v1_6.md](_archive/Prev_iterations/Architecture/architecture_v1_6.md).
 
 ---
 
-## Short-Scope Iterations (v1.6.6+)
+## Short-Scope Iterations (Resolved in v1.6.6)
+
+> [!NOTE]
+> **Status in v1.6.6**: All 60 tactical enhancements listed across Tiers 1–4 have been formally integrated into [architecture_v1_6_6.md](architecture_v1_6_6.md) (Decisions D-126 through D-175, Tests 21 through 28) and technical schemas codified in [ROUTED-DETAIL.md](ROUTED-DETAIL.md). Part I and Part II below retain the active enterprise roadmap for Phase 2.0.
 
 The following improvements were identified through deep analysis of [architecture_v1_6_5.md](architecture_v1_6_5.md), then verified via a line-by-line cross-reference audit (zero false positives out of 60 items), and stress-tested via a second-order ripple-effect analysis to ensure proposed solutions do not introduce new regressions against existing v1.6.5 invariants.
 
@@ -306,26 +310,26 @@ Items are organized into **four cautiously sequenced tiers**. Each tier's items 
 
 ---
 
-*All 60 items above are candidates for short-scope iterations (v1.6.6, v1.6.7, v1.7, etc.). None require the enterprise-scale infrastructure changes deferred to V2. Items with HIGH-severity ripple-effect mitigations (2, 12, 16, 21, 45) must have their mitigations designed into the architecture spec before implementation begins.*
+*All 60 tactical items above are now fully resolved, verified against second-order ripple effects, and codified into [architecture_v1_6_6.md](architecture_v1_6_6.md) (Decisions D-126 through D-175, Tests 21 through 28) and technical schemas in [ROUTED-DETAIL.md](ROUTED-DETAIL.md).*
 
 ---
 
-## Part I: Active Architectural Gaps & Improvement Roadmap (v1.6.5 → v2.0 Enterprise Scope)
+## Part I: Active Architectural Gaps & Improvement Roadmap (v1.6.6 → v2.0 Enterprise Scope)
 
-The following 12 enterprise capabilities are formally deferred for the **V2 Major Iteration (Phase 2.0 Chain Scale)**. Each capability has an active operational bridge codified in [architecture_v1_6_5.md](architecture_v1_6_5.md) to support pilot stores (2–5 stores) without enterprise cloud overhead.
+The following 12 enterprise capabilities are formally deferred for the **V2 Major Iteration (Phase 2.0 Chain Scale)**. Each capability has an active operational bridge codified in [architecture_v1_6_6.md](architecture_v1_6_6.md) (§18) to support pilot stores (2–5 stores) without enterprise cloud overhead.
 
 ### 1. Enterprise Supply Chain & Distributor Settlement
 #### 1.1 Automated Central Supplier Settlement (EDI Bridges & AP Ledger)
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Chain Scale]`
 - **Scope:** Automated Electronic Data Interchange (EDI) bridges into distributor enterprise software (Marg, MediVision) and automated central Accounts Payable (AP) ledger reconciliation across multi-store chains.
 - **Deferral Rationale:** High integration complexity with heterogeneous distributor software. Over-engineering for pilot deployments.
-- **Codified Interim Bridge in v1.6.5 ([§6 / §8](architecture_v1_6_5.md#8-invoicing-gst-credit-notes-debit-notes-delivery-challans)):** Stores issue sequential GST Supplier Debit Notes (`<STORE>-DN-...`) locally; reconciliation is managed manually in central AP bookkeeping.
+- **Codified Interim Bridge in v1.6.6 ([§8](architecture_v1_6_6.md#returns-cash-refund-limits--atomic-exchanges)):** Stores issue sequential GST Supplier Debit Notes (`<STORE>-DN-...`) locally; reconciliation is managed manually in central AP bookkeeping.
 
 #### 1.2 Central In-Transit Virtual Pool & 3PL Carrier Integration
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Chain Scale]`
 - **Scope:** Chain-wide virtual in-transit inventory pool, automated 3PL freight carrier tracking APIs, and formal insurance carrier liability claims for regional warehouse logistics.
 - **Deferral Rationale:** Requires enterprise hub-and-spoke infrastructure needed only when scaling beyond 5 pilot stores.
-- **Codified Interim Bridge in v1.6.5 ([§6 / §8](architecture_v1_6_5.md#near-expiry-vendor-returns-rtv-transfers)):** Sequential Rule 55 Delivery Challans (`<STORE>-DC-...`) for intra-state road transit, and receipt discrepancy ingestion splitting intact vs breakage vs shortage.
+- **Codified Interim Bridge in v1.6.6 ([§6](architecture_v1_6_6.md#near-expiry-vendor-returns-rtv--transfers)):** Sequential Rule 55 Delivery Challans (`<STORE>-DC-...`) for intra-state road transit, and receipt discrepancy ingestion splitting intact vs breakage vs shortage.
 
 ---
 
@@ -334,7 +338,7 @@ The following 12 enterprise capabilities are formally deferred for the **V2 Majo
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Chain Scale]`
 - **Scope:** Real-time generation of Invoice Reference Numbers (IRN) and signed QR codes via direct NIC/GSP API handshakes and asynchronous edge queues.
 - **Deferral Rationale:** Over 95% of retail pharmacy sales are B2C (exempt from IRN under Rule 48(4)). Live government gateway handshakes introduce counter stalls.
-- **Codified Interim Bridge in v1.6.5 ([§8](architecture_v1_6_5.md#invoicing-specifications)):** Stores generate sequential Store-Local B2B Tax Invoices (`<STORE>-B2B-...`) with buyer GSTIN for manual monthly GSTR-1 upload.
+- **Codified Interim Bridge in v1.6.6 ([§8](architecture_v1_6_6.md#invoicing-gst-credit-notes-debit-notes-challans--exchanges)):** Stores generate sequential Store-Local B2B Tax Invoices (`<STORE>-B2B-...`) with buyer GSTIN for manual monthly GSTR-1 upload.
 
 ---
 
@@ -343,19 +347,19 @@ The following 12 enterprise capabilities are formally deferred for the **V2 Majo
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Chain Scale]`
 - **Scope:** Streaming Postgres replication, virtual IP (VIP) automatic rerouting, and distributed consensus fencing on edge PC hardware.
 - **Deferral Rationale:** High risk of split-brain in retail edge environments with non-technical staff.
-- **Codified Interim Bridge in v1.6.5 ([§2](architecture_v1_6_5.md#2-tech-stack-edge-infrastructure)):** Daily automated `pg_dump` replication, scripted promotion (`promote_to_primary.bat`) with LAN fencing, and emergency sequence epoch (`-F1`).
+- **Codified Interim Bridge in v1.6.6 ([§2](architecture_v1_6_6.md#2-tech-stack--edge-infrastructure)):** Standby WAL replication, scripted promotion (`promote_to_primary.bat`) with LAN fencing, and emergency sequence epoch (`-F1`).
 
 #### 3.2 Delta Replication Cursor Engine & Soft-Delete Tombstones
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Chain Scale]`
 - **Scope:** Central pagination cursor engine (`version > :cursor ORDER BY version ASC LIMIT 500`) and bidirectional soft-delete tombstone synchronization across 50+ stores.
 - **Deferral Rationale:** Standard polling operates reliably for pilot catalogs (<10k SKUs) without complex cursor migrations.
-- **Codified Interim Bridge in v1.6.5 ([§5](architecture_v1_6_5.md#central-ingestion-atomicity-poison-pill-quarantine)):** Central batch push transaction atomicity with poison-pill isolation tombstones (`sync-quarantine-tombstone`).
+- **Codified Interim Bridge in v1.6.6 ([§4 / §5](architecture_v1_6_6.md#master-data-delivery--concurrency-control)):** Monotonic watermark sync, paged transport chunking (500 events), MVCC staging, and poison-pill isolation tombstones (`sync-quarantine-tombstone`).
 
 #### 3.3 Cross-Store Store Credit Voucher Double-Spend Coordinator (2PL)
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Chain Scale]`
 - **Scope:** Real-time distributed two-phase locking (2PL) across stores to allow redemption of store credit vouchers at any branch in the chain.
 - **Deferral Rationale:** Requires 99.99% central cloud uptime; network partitions cause customer friction.
-- **Codified Interim Bridge in v1.6.5 ([§8](architecture_v1_6_5.md#invoicing-specifications)):** Store Credit Vouchers are **strictly redeemable only at the issuing branch**.
+- **Codified Interim Bridge in v1.6.6 ([§8](architecture_v1_6_6.md#returns-cash-refund-limits--atomic-exchanges)):** Store Credit Vouchers are **strictly redeemable only at the issuing branch**.
 
 ---
 
@@ -364,7 +368,7 @@ The following 12 enterprise capabilities are formally deferred for the **V2 Majo
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Enterprise Hardening]`
 - **Scope:** Hardware TPM 2.0 Platform Configuration Register (PCR) sealing and Windows DPAPI machine key wrapping for AES-256 keys.
 - **Deferral Rationale:** Pilot counters use diverse PC hardware lacking uniform TPM chips; requires C/Win32 FFI bindings.
-- **Codified Interim Bridge in v1.6.5 ([§16](architecture_v1_6_5.md#16-security-data-protection)):** Hardened Windows File System ACLs (`icacls`) restricting keys strictly to `NT SERVICE\MedPOS`.
+- **Codified Interim Bridge in v1.6.6 ([§16](architecture_v1_6_6.md#16-security--data-protection)):** Hardened Windows File System ACLs (`icacls`) restricting keys strictly to `NT SERVICE\MedPOS`, plus 4-hour Merkle tree event hashing.
 
 ---
 
@@ -373,37 +377,37 @@ The following 12 enterprise capabilities are formally deferred for the **V2 Majo
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Enterprise Infrastructure]`
 - **Scope:** Auto-scaling Kubernetes clusters, managed cloud databases (AWS RDS / GCP Cloud SQL), and multi-region failover for 50+ stores.
 - **Deferral Rationale:** High operational cost without pilot business value.
-- **Codified Interim Bridge in v1.6.5 ([§2](architecture_v1_6_5.md#2-tech-stack-edge-infrastructure)):** Single low-cost Cloud VM running containerized Postgres 16 and FastAPI with off-site backups.
+- **Codified Interim Bridge in v1.6.6 ([§2](architecture_v1_6_6.md#2-tech-stack--edge-infrastructure)):** Single low-cost Cloud VM running containerized Postgres 16 and FastAPI with off-site backups.
 
 #### 5.2 Customer-Facing Dynamic UPI Secondary LCD Pole Display
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 In-Store Experience]`
 - **Scope:** Real-time checkout display on a pole-mounted secondary LCD rendering dynamic NPCI UPI QR codes linked to live payment gateway webhooks.
 - **Deferral Rationale:** Dual-head video driver complexity and payment aggregator enterprise contracts.
-- **Codified Interim Bridge in v1.6.5 ([§8](architecture_v1_6_5.md#invoicing-specifications)):** Dynamic NPCI UPI QR string (`upi://pay?...`) printed directly on thermal paper receipts, paired with static counter soundboxes.
+- **Codified Interim Bridge in v1.6.6 ([§8](architecture_v1_6_6.md#checkout-workflow--peripheral-resilience)):** Dynamic NPCI UPI QR string (`upi://pay?...`) printed directly on thermal paper receipts, paired with static counter soundboxes.
 
 #### 5.3 Cashless Insurance / Third-Party Administrator (TPA) Direct Claims
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Enterprise Integration]`
 - **Scope:** Real-time online pre-authorization and co-pay split billing with Indian health insurance TPAs (Medi Assist, Paramount).
 - **Deferral Rationale:** Lengthy corporate empaneled onboarding and complex co-pay billing engines.
-- **Codified Interim Bridge in v1.6.5 ([§9](architecture_v1_6_5.md#9-discounts)):** Manual tender metadata fields capturing Insurer Name, Policy Number, and Pre-Auth Code on standard GST invoices.
+- **Codified Interim Bridge in v1.6.6 ([§9](architecture_v1_6_6.md#9-discounts--price-governance)):** Manual tender metadata fields capturing Insurer Name, Policy Number, and Pre-Auth Code on standard GST invoices.
 
 #### 5.4 Prescription Optical Character Recognition (OCR) AI Parsing
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 In-Store Experience]`
 - **Scope:** Edge AI computer vision models automatically scanning and parsing cursive handwritten doctor prescriptions.
 - **Deferral Rationale:** High error rate on handwritten prescriptions poses extreme liability if transcribed without 100% human verification.
-- **Codified Interim Bridge in v1.6.5 ([§10.3](architecture_v1_6_5.md#103-schedule-x-ndps-dual-prescription-custody-bound-ledger)):** Digital webcam/scanner photo capture attached to dispense records with manual cashier entry.
+- **Codified Interim Bridge in v1.6.6 ([§10.3](architecture_v1_6_6.md#103-schedule-x--ndps-dual-prescription-custody--bound-ledger)):** Digital webcam/scanner photo capture attached to dispense records with manual cashier entry.
 
 #### 5.5 Automated WhatsApp & SMS Digital Invoice Delivery
 `[Intentionally Deferred for V2 Major Iteration — Phase 2.0 Customer Engagement]`
 - **Scope:** Automated background dispatch of digital GST invoices and Credit Notes to WhatsApp and SMS via enterprise cloud gateways.
 - **Deferral Rationale:** Meta WhatsApp Business API compliance and Indian Telecom DLT registration overhead.
-- **Codified Interim Bridge in v1.6.5 ([§3](architecture_v1_6_5.md#3-core-modules)):** Cashier one-click WhatsApp Web share link (`wa.me`) with pre-formatted invoice text.
+- **Codified Interim Bridge in v1.6.6 ([§8](architecture_v1_6_6.md#checkout-workflow--peripheral-resilience)):** Cashier one-click WhatsApp Web share link (`wa.me`) with pre-formatted invoice text.
 
 ---
 
 ## Part II: Active Priority vs. Complexity Roadmap Matrix (Track B: Deferred for V2)
 
-| Area / Feature | Impact | Complexity | Target Milestone | Deferral Rationale for V2 Major Iteration | Codified Interim Bridge in v1.6.5 |
+| Area / Feature | Impact | Complexity | Target Milestone | Deferral Rationale for V2 Major Iteration | Codified Interim Bridge in v1.6.6 |
 | :--- | :---: | :---: | :---: | :--- | :--- |
 | **Automated Central Supplier Settlement (§1.1)** | High (Financial) | High | **Phase 2.0 (Chain Scale)** | Requires distributor EDI software bridges and automated AP reconciliation. | Local GST Debit Notes (`<STORE>-DN-...`); manual AP reconciliation. |
 | **Central In-Transit Virtual Pool (§1.2)** | High (Logistics) | High | **Phase 2.0 (Chain Scale)** | Regional warehouse hub routing, 3PL logistics carrier APIs, and freight dispute arbitration. | Rule 55 Delivery Challans (`<STORE>-DC-...`) and receipt variance breakdown. |
@@ -422,7 +426,80 @@ The following 12 enterprise capabilities are formally deferred for the **V2 Majo
 
 ## Part III: Historical Milestone Archive
 
-### Section A: v1.6 → v1.6.5 Resolved Baseline
+### Section A: v1.6.5 → v1.6.6 Resolved Baseline
+
+The following 60 verified tactical patch items across 4 implementation tiers were designed, stress-tested against second-order ripple effects, and codified into the authoritative [architecture_v1_6_6.md](architecture_v1_6_6.md) specification (Decisions D-126 through D-175, Tests 21 through 28) with technical DDL and payload schemas in [ROUTED-DETAIL.md](ROUTED-DETAIL.md):
+
+#### 1. Tier 1: Foundation Entities & Regulatory Gating
+- **Goods Receipt Note (GRN) & Short Receipts (D-126, D-127, D-128, Test 21):** Defined `grn` event (#19) capturing distributor, purchase invoice ref, batch details, and `purchase_price_per_unit` (role-gated to Manager/Admin). Short receipts capture `ordered_pack_qty` vs `received_pack_qty` internally for Manager review without purchase order dependencies.
+- **Zero-MRP Free Supply Guard (D-129, Test 22):** Enforced `CHECK ((is_free_supply = TRUE AND mrp = 0) OR (is_free_supply = FALSE AND mrp > 0))` on catalog and batch tables. Free-supply items bypass discount division to eliminate `(0-0)/0` division-by-zero crashes.
+- **Drug Schedule Classification & NDPS Invariant (D-130, Test 25):** Added statutory `drug_schedule ENUM ('NONE', 'SCHEDULE_H', 'SCHEDULE_H1', 'SCHEDULE_X')` and independent `is_ndps BOOLEAN`. Whenever `is_ndps = TRUE`, system unconditionally enforces dual-custody verification and hard-blocks refills under Rule 65(11A).
+- **Chapter 30 HSN Code Validation (D-131):** Validates pharmaceutical Chapter 30 codes on invoice creation: soft-warning on B2C retail sales, hard-block on B2B registered sales.
+
+#### 2. Tier 2: Transaction Integrity & Core Workflows
+- **Atomic 3-Event Exchanges (D-132, Test 23):** Codified customer exchanges as atomic 3-event groups (`sale-return`, `credit-note-redemption`, `sale`) bound by `exchange_group_id` committed in a single Postgres transaction. Client session staging ensures zero dangling credit; down-sells leave active balances on the Credit Note.
+- **Credit Note Redemption & Cash Refund Ceiling (D-133, Test 28):** Added `credit-note-redemption` event (#20) and `store-credit` tender. Enforced daily counter cash refund limit with split settlement (`refund_settlement: {cash, store_credit}`).
+- **CDSCO Drug Recall Hard-Block (D-143, Test 24):** Delivered via sync response payloads (`batch-recall`), immediately auto-quarantining batches. Active carts scanning recalled batches hard-block at checkout commit (`COMMITTED_PENDING_PRINT`, HTTP 409 `DRUG_RECALL_BLOCK`) with non-destructive line removal.
+- **Rule 65(11) Repeat Dispensing Restriction (D-141, D-142, Test 25):** Prohibits repeat dispensing of Schedule H/H1 drugs unless prescribers explicitly author repeat instructions (`is_repeatable = true`). Prescriptions track cumulative balances (`prescribed_base_units`, `cum_dispensed_base_units`, `unfulfilled_base_units`) locked `FOR UPDATE`.
+- **Schedule X Midnight Balance Materialization & DPDP Soft-Consent (D-144, D-145):** Daily running ledger opening balances materialized via scheduled midnight background job. DPDP Act 2023 patient consent captured as soft-required flag.
+- **Net Effective Discount Clamping (D-138, D-139, D-140):** Bounded cashier discretionary discounts to $\le 15.0\%$ net effective discount off full Strip MRP. Purchase price floor prevents selling below cost without Manager Quick-PIN override. Manager Quick-PIN override governed by monthly store pool ceiling (₹5,000) with High-Access Argon2id Password fallback.
+
+#### 3. Tier 3: Peripheral Resilience & Two-Tier Authentication
+- **Two-Tier Authentication Hierarchy (D-147, Test 26):** Tier A Session-Bound Quick-PIN (4–6 digits, set at shift open, auto-expires at close/12h) authorizes rapid supervisor overrides; Tier B Full Argon2id Password is required for high-liability compliance actions (account disable, Schedule X/NDPS dispense, master change approval, training reset).
+- **Progressive Throttling & Token Revocation (D-148, D-150, Test 26):** 5 consecutive failed logins locks `(terminal_id + username)` for 15 minutes. Incremented user `token_generation` counter revokes active JWTs across terminals within 30 seconds.
+- **Peer Cashier Shift Isolation & Crash Historic Binding (D-173, D-174):** Terminals enforce peer cashier isolation, blocking Cashier B from viewing or closing Cashier A's shift. Recovered crash transactions bind to their historic shift ID, preventing float distortion on newly opened shifts.
+- **Thermal Printer Jam Reprint & Walkaway Void (D-124, D-137, D-125):** Added audited `reprint` event (#21) with `*** DUPLICATE COPY ***` watermark. Walkaways during printer jams trigger cashier void issuing offsetting Credit Notes (`<STORE_CODE>-CN-...`), restoring stock and preserving numbering.
+- **Barcode Miss Fallback & Family Phone Disambiguation (D-135, D-136, D-134):** Unrecognized barcodes prompt manual search and log telemetry gap events. Phone search supports family disambiguation while masking medical history from cashiers. Cashier customer bill preview toggle enabled.
+
+#### 4. Tier 4: Edge Hardening, Telemetry & Rollout Safety
+- **Sync Transport Paging & Staging MVCC (D-151, D-152, D-153, Test 27):** Monotonic `master_data_version` watermarks enforce sequential delivery. Large catalog releases use transport chunking (`batch_id`, paged chunks of 500 events) staged in `master_data_staging`, activating atomically via MVCC when complete. Outbound sync pushes enforce 500-event batch ceilings.
+- **Optimistic Locking Refresh-and-Retry & Advisory Lock (D-155):** Stale edits rejected with HTTP 409 Conflict prompting refresh-and-retry backed by a 5-minute advisory lock (`editing_by`).
+- **Store API Key Authentication & LAN Deadlock Elimination (D-156, D-158, D-159):** Store sync uses rotatable API keys; Central Admin uses Argon2id session cookies. Store Postgres operates at `READ COMMITTED` with ascending PK row-locks (`ORDER BY id ASC FOR UPDATE`) preventing multi-counter deadlocks.
+- **Automated 4-Hour Merkle Tree Hashing (D-160):** Scheduled daemon computes Merkle root hashes of committed store events, exporting them externally for tamper-evident audit verification.
+- **Annual AES-256 Key Rotation & Isolated Training Schema (D-161, D-162):** Annual key rotation with `key_id` tagging and background re-encryption. Training simulation mode executes inside an ephemeral `training.*` Postgres schema with a dedicated `TRAINING-` invoice series.
+- **Alembic Pre-Flight Backup & Tiered Disk Space Response (D-163, D-164, D-165, D-167):** Pre-migration automated edge backup (`pg_dump -Fc`). WSUS updates deferred to 2–3 AM maintenance window. Tiered disk health triggers: 85% log prune/VACUUM ANALYZE; 90% degraded write mode; 98% emergency read-only. Shutdown drains active checkouts for 30 seconds.
+- **Automated Test Suite Expansion (D-175, Tests 21–28):** Test suite expanded from 20 to 28 automated integration specifications. Scheduled background jobs track SKU sales velocity and cashier return anomalies (D-172).
+
+#### 5. Summary of 8 Hardened Operational Safeguards (v1.6.6)
+1. **Zero-MRP Free Supply Guard (§6):** Enforces `CHECK ((is_free_supply = TRUE AND mrp = 0) OR (is_free_supply = FALSE AND mrp > 0))` on catalog and batch tables, barring accidental positive billing and bypassing discount division-by-zero crashes.
+2. **CDSCO Drug Recall Hard-Block (§10.1):** Recalls delivered in sync payloads auto-quarantine batches; active checkout transactions hard-block (HTTP 409 `DRUG_RECALL_BLOCK`) while supporting non-destructive line removal.
+3. **Rule 65(11) Cumulative Prescription Locking (§10.2):** Prohibits repeat dispensing of Schedule H/H1 drugs without explicit prescriber refill directions, locking prescription balances `FOR UPDATE`.
+4. **Two-Tier Authentication Hierarchy (§11):** Tier A Session Quick-PIN (4–6 digits) for high-frequency cashier overrides; Tier B Full Argon2id Password for high-liability compliance actions (Schedule X/NDPS, staff revocation).
+5. **Multi-Counter LAN Deadlock Elimination (§2):** Store Postgres operates at `READ COMMITTED` with ascending primary-key row-locks (`ORDER BY id ASC FOR UPDATE`) preventing multi-counter worker lock contention.
+6. **Peer Cashier Shift & Float Isolation (§13):** Worker terminals enforce peer shift isolation, blocking cross-terminal inspection/closure, and bind crash-recovered transactions strictly to historic shift IDs.
+7. **Automated 4-Hour Merkle Tree Ledger Proofs (§16):** Periodic daemon computes Merkle root hashes of store events for cryptographic tamper-evident audits.
+8. **Tiered Edge Disk Space Response Automation (§17):** Triggers graduated responses at 85% (log prune & `VACUUM ANALYZE`), 90% (degraded write mode), and 98% (emergency read-only mode).
+
+---
+
+#### Resolved Baseline Matrix (v1.6.5 → v1.6.6)
+
+| Area / Enhancement | Impact | Complexity | Status in v1.6.6 | Spec Reference |
+| :--- | :---: | :---: | :---: | :---: |
+| **Goods Receipt Note (GRN) & Short Receipts** | Critical (Operations) | Medium | **Resolved** | [architecture_v1_6_6.md §5, §6](architecture_v1_6_6.md#inbound-goods-receipt-grn--classifications) |
+| **Purchase Price / Cost-of-Goods Gating** | High (Financial) | Low | **Resolved** | [architecture_v1_6_6.md §6, §11](architecture_v1_6_6.md#inbound-goods-receipt-grn--classifications) |
+| **Zero-MRP Free Supply Guard & Constraint** | High (Integrity) | Low | **Resolved** | [architecture_v1_6_6.md §6, §9](architecture_v1_6_6.md#inbound-goods-receipt-grn--classifications) |
+| **Statutory Drug Schedules & NDPS Dual Custody** | Critical (Legal) | Medium | **Resolved** | [architecture_v1_6_6.md §6, §10](architecture_v1_6_6.md#inbound-goods-receipt-grn--classifications) |
+| **Atomic 3-Event Customer Exchanges** | Critical (Integrity) | Medium | **Resolved** | [architecture_v1_6_6.md §8](architecture_v1_6_6.md#returns-cash-refund-limits--atomic-exchanges) |
+| **Credit Note Redemption & Cash Ceiling** | High (Financial) | Medium | **Resolved** | [architecture_v1_6_6.md §8, §13](architecture_v1_6_6.md#returns-cash-refund-limits--atomic-exchanges) |
+| **CDSCO Drug Recall Hard-Block & Line Removal** | Critical (Legal) | Medium | **Resolved** | [architecture_v1_6_6.md §10.1](architecture_v1_6_6.md#101-absolute-expiry-hard-block--drug-recalls) |
+| **Rule 65(11) Repeat Dispensing Hard-Block** | Critical (Legal) | Medium | **Resolved** | [architecture_v1_6_6.md §10.2](architecture_v1_6_6.md#102-schedule-h1-register--prescription-reuse-limits) |
+| **Two-Tier Authentication (Quick-PIN vs Password)** | Critical (Security) | Medium | **Resolved** | [architecture_v1_6_6.md §11](architecture_v1_6_6.md#selectable-role-presets--authentication-hierarchy) |
+| **Progressive Login Throttling & Token Revocation** | High (Security) | Low | **Resolved** | [architecture_v1_6_6.md §11](architecture_v1_6_6.md#selectable-role-presets--authentication-hierarchy) |
+| **Peer Cashier Shift & Float Isolation** | High (Financial) | Low | **Resolved** | [architecture_v1_6_6.md §13](architecture_v1_6_6.md#13-shift-management--day-end-till-reconciliation-z-report) |
+| **Sync Batch Paging & Transport Chunking** | High (Scale) | Medium | **Resolved** | [architecture_v1_6_6.md §4, §5](architecture_v1_6_6.md#master-data-delivery--concurrency-control) |
+| **Optimistic Locking Advisory Refresh-and-Retry** | High (Integrity) | Low | **Resolved** | [architecture_v1_6_6.md §4](architecture_v1_6_6.md#master-data-delivery--concurrency-control) |
+| **Multi-Counter Row-Locking Deadlock Elimination**| High (Reliability) | Low | **Resolved** | [architecture_v1_6_6.md §2](architecture_v1_6_6.md#2-tech-stack--edge-infrastructure) |
+| **4-Hour Merkle Tree Audit Event Hashing** | High (Compliance) | Medium | **Resolved** | [architecture_v1_6_6.md §16](architecture_v1_6_6.md#16-security--data-protection) |
+| **Annual AES-256 Key Rotation Protocol** | High (Security) | Medium | **Resolved** | [architecture_v1_6_6.md §16](architecture_v1_6_6.md#16-security--data-protection) |
+| **Isolated Ephemeral Training Schema (`training.*`)**| Medium (Operations)| Low | **Resolved** | [architecture_v1_6_6.md §16](architecture_v1_6_6.md#16-security--data-protection) |
+| **Alembic Pre-Flight Automated Edge Backup** | High (DevOps) | Low | **Resolved** | [architecture_v1_6_6.md §2, §17](architecture_v1_6_6.md#17-deployment-safety--edge-rollout) |
+| **Tiered Disk Space Health Response Automation** | High (Reliability) | Low | **Resolved** | [architecture_v1_6_6.md §17](architecture_v1_6_6.md#17-deployment-safety--edge-rollout) |
+| **Automated Test Suite Expansion (Tests 21–28)** | High (Quality) | Medium | **Resolved** | [architecture_v1_6_6.md §14](architecture_v1_6_6.md#14-testing--verification-suite) |
+
+---
+
+### Section B: v1.6 → v1.6.5 Resolved Baseline
 
 The following 8 core architectural improvements, 4 interim bridges, and 8 hardened operational safeguards were designed, verified, and codified into the authoritative [architecture_v1_6_5.md](architecture_v1_6_5.md) specification:
 
@@ -478,7 +555,7 @@ The following 8 core architectural improvements, 4 interim bridges, and 8 harden
 
 ---
 
-### Resolved Baseline Matrix (v1.6 → v1.6.5)
+#### Resolved Baseline Matrix (v1.6 → v1.6.5)
 
 | Area / Feature | Impact | Complexity | Status in v1.6.5 | Spec Reference |
 | :--- | :---: | :---: | :---: | :---: |
@@ -497,7 +574,7 @@ The following 8 core architectural improvements, 4 interim bridges, and 8 harden
 
 ---
 
-### Section B: v1.5 → v1.6 Resolved Baseline
+### Section C: v1.5 → v1.6 Resolved Baseline
 
 The following 12 core architectural improvements and 8 operational safeguards were reviewed, designed, and fully integrated into the historical [architecture_v1_6.md](_archive/Prev_iterations/Architecture/architecture_v1_6.md) specification:
 
@@ -533,7 +610,7 @@ The following 12 core architectural improvements and 8 operational safeguards we
 
 ---
 
-### Resolved Baseline Matrix (v1.5 → v1.6)
+#### Resolved Baseline Matrix (v1.5 → v1.6)
 
 | Area | Impact | Complexity | Status in v1.6 | Spec Reference |
 | :--- | :---: | :---: | :---: | :---: |

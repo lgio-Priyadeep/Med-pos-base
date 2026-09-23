@@ -1,14 +1,29 @@
 # Pharmacy POS — Routed Architectural Detail (`ROUTED-DETAIL.md`)
 
-This document captures all detailed specifications, code blocks, payload structures, testing suites, and scenario matrices moved out of `architecture_v1_6_5.md` during the Architecture Doc Compression Pass. 
+This document captures all detailed specifications, code blocks, payload structures, testing suites, and scenario matrices moved out of `architecture_v1_6_6.md` and `architecture_v1_6_5.md` during the Architecture Doc Compression Passes. 
 
 This content is strictly partitioned by destination document (Docs 1–11) to directly seed the authoring of the modular documentation suite.
 
 ---
 
-## Historical Version Archive: v1.6.5 Changelog Detail
+## Historical Version Archive: v1.6.6 Changelog Detail
 
 *(Removed from header of architecture spec per discipline rule: "Collapse version history to one line per version, max 15 words")*
+
+1. **Foundational Entities & Gating (§3, §6, §10)**: Sequential Goods Receipt Notes (GRN) capturing `purchase_price_per_unit` role-gated to Manager/Admin; short-receipt logging; zero-MRP free supply CHECK constraint; statutory drug schedule ENUM and NDPS dual-custody flags; Chapter 30 HSN validation.
+2. **Transaction Integrity & Exchanges (§6, §8, §10)**: Atomic 3-event customer exchanges bound by `exchange_group_id` (`sale-return`, `credit-note-redemption`, `sale`) in a single database transaction; daily counter cash refund limit with split settlement; cumulative prescription balance tracking locked FOR UPDATE under Rule 65(11).
+3. **Regulatory Hard-Blocks (§10)**: Unconditional checkout commit hard-block for CDSCO drug recalls with non-destructive line removal; scheduled midnight opening balance materialization for Schedule X running ledger; DPDP Act 2023 soft patient consent.
+4. **Two-Tier Authentication & Access Governance (§11)**: Tier A Session Quick-PIN (4–6 digits) for high-frequency supervisor overrides; Tier B Full Argon2id Password for high-liability compliance actions; user `token_generation` counter for instantaneous JWT invalidation; progressive login throttling.
+5. **Sync Scaling & Edge Resilience (§2, §4, §5)**: Watermark-based paged sync batching (500-event ceiling) with transport chunking and MVCC staging; optimistic locking refresh-and-retry backed by 5-minute advisory lock; store API key auth header; standby WAL replication lag monitoring (>1h alert).
+6. **Hardware & Peripheral Defense (§8)**: Audited `reprint` event with duplicate copy watermark; unrecognized barcode manual search fallback and telemetry logging; customer bill preview toggle; family phone search disambiguation with medical history masking.
+7. **Shift & Financial Isolation (§13)**: Peer cashier shift isolation blocking cross-terminal inspection/closure; strict physical cash isolation in till variance formula (`sum(tender_split.cash)` vs `refund_settlement.cash`); binding crash-recovered transactions to historic shift IDs.
+8. **Security & Cryptographic Audit (§16)**: Automated 4-hour Merkle tree event hashing for tamper-evident ledger proofs; annual AES-256 key rotation protocol with `key_id` tagging; ephemeral `training.*` isolated schema.
+9. **Edge Rollout & System Health (§2, §17)**: Alembic pre-flight automated database backup script (`pg_dump -Fc`); tiered disk space health triggers (85% / 90% / 98%); Windows LTSC WSUS maintenance window deferral (2–3 AM); 30-second checkout drain on shutdown.
+10. **Testing & Telemetry Expansion (§14, §15)**: Expanded automated test suite from Tests 1–20 to Tests 1–28; scheduled SKU velocity and cashier return anomaly telemetry jobs.
+
+---
+
+## Historical Version Archive: v1.6.5 Changelog Detail
 
 1. **Fractional Inventory & Unit of Measure (UOM) Hierarchy (§3, §6)**: Stores and calculates batch inventory exclusively in atomic integer Base Dispensing Units (tablets, capsules, ml). Batch-level immutability for pack_size, packaging_unit, and base_unit prevents central catalog edits from distorting on-shelf stock counts. Legal Metrology Rule 2011 fractional rounding with statutory MRP price clamping. Scanning 1D/2D barcodes strictly defaults to 1 Packaging Unit (pack_size base units). Sealed blister cavities return to active inventory; cut/punctured cavities route to quarantine-write-off.
 2. **Near-Expiry Vendor Returns (RTV) & Local Supplier Debit Notes (§5, §6, §8)**: Configurable shelf-expiry alert tiers (90d Amber FEFO / 60d Orange RTV packing / 30d Red shelf quarantine). Added stock-move: rtv-quarantine event. Introduced sequential, offline GST Debit Notes (<STORE_CODE>-DN-YYYYMM-XXXX) with CGST/SGST/IGST tax reversal breakdowns. Replicated distributor profiles for offline document generation.
@@ -230,11 +245,128 @@ CREATE TABLE day_end_z_reports (
 );
 ```
 
+### 1.7 Goods Receipt Note (GRN) & Short Receipts Table Schema (v1.6.6)
+```sql
+CREATE TABLE goods_receipt_notes (
+    grn_id UUID PRIMARY KEY,
+    grn_number VARCHAR(64) UNIQUE NOT NULL, -- <STORE_CODE>-GRN-YYYYMM-XXXX
+    store_id VARCHAR(32) NOT NULL,
+    distributor_id UUID NOT NULL,
+    purchase_invoice_no VARCHAR(64) NOT NULL,
+    purchase_invoice_date DATE NOT NULL,
+    received_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    received_by UUID NOT NULL,
+    gross_purchase_amount NUMERIC(12,2) NOT NULL,
+    total_tax_amount NUMERIC(12,2) NOT NULL,
+    net_purchase_amount NUMERIC(12,2) NOT NULL,
+    has_short_receipt BOOLEAN NOT NULL DEFAULT FALSE,
+    manager_review_notes TEXT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE goods_receipt_note_items (
+    grn_item_id UUID PRIMARY KEY,
+    grn_id UUID NOT NULL REFERENCES goods_receipt_notes(grn_id),
+    drug_id UUID NOT NULL,
+    batch_no VARCHAR(32) NOT NULL,
+    expiry_date DATE NOT NULL,
+    pack_size INTEGER NOT NULL CHECK (pack_size > 0),
+    ordered_pack_qty INTEGER NOT NULL CHECK (ordered_pack_qty >= 0),
+    received_pack_qty INTEGER NOT NULL CHECK (received_pack_qty >= 0),
+    shortage_pack_qty INTEGER NOT NULL GENERATED ALWAYS AS (ordered_pack_qty - received_pack_qty) STORED,
+    received_base_qty INTEGER NOT NULL, -- received_pack_qty * pack_size
+    mrp NUMERIC(10,2) NOT NULL CHECK (mrp >= 0),
+    purchase_price_per_unit NUMERIC(10,4) NOT NULL CHECK (purchase_price_per_unit >= 0),
+    cgst_rate NUMERIC(5,2) NOT NULL DEFAULT 0.00,
+    sgst_rate NUMERIC(5,2) NOT NULL DEFAULT 0.00,
+    igst_rate NUMERIC(5,2) NOT NULL DEFAULT 0.00
+);
+```
+
+### 1.8 Drug Classification, NDPS & Zero-MRP Constraints (v1.6.6)
+```sql
+CREATE TYPE drug_schedule_enum AS ENUM ('NONE', 'SCHEDULE_H', 'SCHEDULE_H1', 'SCHEDULE_X');
+
+ALTER TABLE catalog_items ADD COLUMN drug_schedule drug_schedule_enum NOT NULL DEFAULT 'NONE';
+ALTER TABLE catalog_items ADD COLUMN is_ndps BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE catalog_items ADD COLUMN is_free_supply BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE catalog_items ADD CONSTRAINT chk_zero_mrp_free_supply 
+    CHECK ((is_free_supply = TRUE AND mrp = 0.00) OR (is_free_supply = FALSE AND mrp > 0.00));
+
+ALTER TABLE batches ADD COLUMN rack_location VARCHAR(32) NOT NULL DEFAULT 'UNASSIGNED';
+```
+
+### 1.9 Cumulative Prescription Balance Ledger Table Schema (v1.6.6)
+```sql
+CREATE TABLE prescriptions (
+    prescription_id UUID PRIMARY KEY,
+    prescription_number VARCHAR(64) NOT NULL,
+    patient_id VARCHAR(64) NOT NULL, -- <STORE_CODE>-PAT-UUID
+    doctor_id VARCHAR(64) NOT NULL,  -- <STORE_CODE>-DOC-UUID
+    prescribed_date DATE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    is_repeatable BOOLEAN NOT NULL DEFAULT FALSE,
+    dpdp_consent_obtained BOOLEAN NOT NULL DEFAULT FALSE,
+    dpdp_consent_timestamp TIMESTAMP WITH TIME ZONE NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE prescription_line_items (
+    prescription_line_id UUID PRIMARY KEY,
+    prescription_id UUID NOT NULL REFERENCES prescriptions(prescription_id),
+    drug_id UUID NOT NULL,
+    prescribed_base_units INTEGER NOT NULL CHECK (prescribed_base_units > 0),
+    cum_dispensed_base_units INTEGER NOT NULL DEFAULT 0 CHECK (cum_dispensed_base_units >= 0),
+    unfulfilled_base_units INTEGER NOT NULL CHECK (unfulfilled_base_units >= 0),
+    CONSTRAINT chk_cum_dispensed_le_prescribed 
+        CHECK (cum_dispensed_base_units + unfulfilled_base_units = prescribed_base_units)
+);
+```
+
+### 1.10 Master Data Transport Paging & Staging Schema (v1.6.6)
+```sql
+CREATE TABLE master_data_staging (
+    staging_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_id UUID NOT NULL,
+    page_no INTEGER NOT NULL,
+    total_pages INTEGER NOT NULL,
+    master_version BIGINT NOT NULL,
+    entity_type VARCHAR(64) NOT NULL,
+    payload JSONB NOT NULL,
+    ingested_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_staging_page UNIQUE (batch_id, page_no)
+);
+```
+
+### 1.11 Till Tender & Refund Split Isolation Tables (v1.6.6)
+```sql
+CREATE TABLE invoice_tender_splits (
+    tender_split_id UUID PRIMARY KEY,
+    invoice_id UUID NOT NULL REFERENCES invoices(invoice_id),
+    cash NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (cash >= 0),
+    card NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (card >= 0),
+    upi NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (upi >= 0),
+    credit_note NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (credit_note >= 0),
+    recorded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE refund_settlements (
+    settlement_id UUID PRIMARY KEY,
+    credit_note_id UUID NOT NULL,
+    cash NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (cash >= 0),
+    credit_note_balance NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (credit_note_balance >= 0),
+    authorized_by UUID NOT NULL,
+    recorded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users ADD COLUMN token_generation INTEGER NOT NULL DEFAULT 1;
+```
+
 ---
 
 ## Doc 2: Event Schema Doc
 
-### 2.1 Full Event Payload Schemas for Events 1–20 & Tombstones
+### 2.1 Full Event Payload Schemas for Events 1–21 & Tombstones
 Every event payload adheres to JSONB structured typing:
 1. `sale`: `{ "invoice_number": "<STORE_CODE>-INV-YYYYMM-XXXX", "customer_id": "UUID|null", "lines": [{ "drug_id": "UUID", "batch_id": "UUID", "pack_qty": 2, "loose_qty": 5, "base_qty": 25, "unit_price": 1.43, "line_total": 35.75, "cgst": 2.14, "sgst": 2.14 }], "payment": { "method": "CASH|CARD|UPI|SPLIT", "details": {} } }`
 2. `b2b-sale`: `{ "invoice_number": "<STORE_CODE>-B2B-YYYYMM-XXXX", "buyer_gstin": "29AAAAA0000A1Z5", "buyer_name": "ABC Pharmacy Pvt Ltd", "lines": [...], "taxes": { "cgst": 100, "sgst": 100, "igst": 0 } }`
@@ -256,6 +388,7 @@ Every event payload adheres to JSONB structured typing:
 18. `settings-change`: `{ "setting_key": "compliance_mode", "old_value": "MANDATORY", "new_value": "OPTIONAL", "changed_by": "UUID" }`
 19. `grn`: `{ "grn_number": "<STORE_CODE>-GRN-YYYYMM-XXXX", "distributor_id": "UUID", "purchase_invoice_no": "INV-2026-8812", "purchase_invoice_date": "2026-09-20", "received_at": "2026-09-22T10:00:00Z", "received_by": "UUID", "lines": [{ "drug_id": "UUID", "batch_no": "BCH-9921", "expiry_date": "2028-09-30", "mrp": 120.00, "purchase_price_per_unit": 85.50, "ordered_pack_qty": 10, "received_pack_qty": 10, "pack_size": 10, "base_qty": 100, "hsn_code": "30041010", "cgst_rate": 6.0, "sgst_rate": 6.0 }] }`
 20. `credit-note-redemption`: `{ "redemption_id": "UUID", "credit_note_number": "<STORE_CODE>-CN-YYYYMM-XXXX", "redeemed_invoice_number": "<STORE_CODE>-INV-YYYYMM-XXXX", "customer_id": "UUID|null", "redeemed_amount": 250.00, "remaining_credit_balance": 150.00, "authorized_by": "UUID" }`
+21. `reprint`: `{ "reprint_id": "UUID", "document_type": "INVOICE|CREDIT_NOTE|DEBIT_NOTE|CHALLAN", "document_number": "<STORE_CODE>-INV-YYYYMM-XXXX", "reason": "PRINTER_PAPER_JAM|CUSTOMER_DAMAGED_COPY|AUDIT_REPRINT", "authorized_by": "UUID", "terminal_id": "POS-01", "timestamp": "2026-09-22T10:15:30Z", "watermark_applied": "*** DUPLICATE COPY ***" }`
 - `sync-quarantine-tombstone`: `{ "quarantined_event_id": "UUID", "original_event_type": "sale", "error_code": "SCHEMA_VIOLATION", "quarantine_timestamp": "2026-09-19T23:36:00Z" }`
 
 ### 2.2 Atomic Central Batch Ingestion SQL Flow
@@ -271,6 +404,44 @@ BEGIN;
   SET last_committed_seq = :max_batch_seq, updated_at = CURRENT_TIMESTAMP 
   WHERE store_id = :store_id AND last_committed_seq < :max_batch_seq;
 COMMIT;
+```
+
+### 2.3 Exchange 3-Event Transaction Payload & Recall Message (v1.6.6)
+```json
+{
+  "exchange_group_id": "550e8400-e29b-41d4-a716-446655440000",
+  "events": [
+    {
+      "event_type": "sale-return",
+      "credit_note_number": "STORE-01-CN-202609-0012",
+      "returned_items": [{"drug_id": "UUID", "batch_id": "UUID", "qty": 10, "credit_amount": 150.00}]
+    },
+    {
+      "event_type": "credit-note-redemption",
+      "credit_note_number": "STORE-01-CN-202609-0012",
+      "redeemed_amount": 150.00,
+      "remaining_credit": 0.00
+    },
+    {
+      "event_type": "sale",
+      "invoice_number": "STORE-01-INV-202609-0089",
+      "lines": [{"drug_id": "UUID", "batch_id": "UUID", "qty": 1, "line_total": 150.00}],
+      "payment": {"method": "STORE_CREDIT_EXCHANGE", "exchange_group_id": "550e8400-e29b-41d4-a716-446655440000"}
+    }
+  ]
+}
+```
+
+```json
+{
+  "event_type": "batch-recall",
+  "recall_id": "CDSCO-REC-2026-042",
+  "drug_id": "550e8400-e29b-41d4-a716-446655440000",
+  "batch_no": "AUG2026-01",
+  "reason": "SUB_POTENCY_ALERT",
+  "recalled_at": "2026-09-22T08:00:00Z",
+  "quarantine_action": "HARD_BLOCK_CHECKOUT"
+}
 ```
 
 ---
@@ -330,11 +501,52 @@ COMMIT;
 - `POST /api/v1/admin/governance/requests/{id}/reject` — Reject change request with reason code.
 - `GET /api/v1/admin/reports/shrinkage` — Multi-store aggregate shrinkage and in-line stock adjustment reports.
 
+### 3.3 Paged Sync Pull Endpoint Contract (v1.6.6)
+- **Endpoint**: `GET /api/v1/sync/events/pull`
+- **Caller**: Store Counter 1 Sync Worker.
+- **Query Parameters**:
+  - `page`: Integer (default 1)
+  - `page_size`: Integer (default 500, max 500)
+  - `continuation_watermark`: Monotonic sequence integer
+- **Response Schema (200 OK)**:
+  ```json
+  {
+    "page": 1,
+    "page_size": 500,
+    "total_pages": 4,
+    "has_more": true,
+    "next_continuation_token": "seq_500",
+    "batch_id": "550e8400-e29b-41d4-a716-446655440000",
+    "events": []
+  }
+  ```
+
+### 3.4 Optimistic Locking Refresh-and-Retry & Advisory Lock Contract (v1.6.6)
+- **Advisory Lock Endpoint**: `POST /api/v1/master-data/lock`
+- **Request**: `{"table": "catalog_items", "record_id": "550e8400-e29b-41d4-a716-446655440000", "lock_duration_sec": 300}`
+- **Response (200 OK)**: `{"status": "LOCKED", "locked_by": "UUID", "expires_at": "2026-09-22T10:20:00Z"}`
+- **Stale Rejection (409 Conflict)**:
+  ```json
+  {
+    "error": "STALE_VERSION_CONFLICT",
+    "table": "catalog_items",
+    "record_id": "550e8400-e29b-41d4-a716-446655440000",
+    "submitted_version": 4,
+    "current_version": 5,
+    "current_record": {},
+    "message": "Record has been updated remotely. Please refresh and retry."
+  }
+  ```
+
+### 3.5 Store API Key Authentication Header Specification (v1.6.6)
+- **Header**: `X-Store-API-Key: <STORE_CODE>.<SECRET_KEY_HASH>`
+- **Key Rotation**: Dual-key support during 30-day rotation grace period.
+
 ---
 
 ## Doc 4: RBAC Permission Matrix
 
-### Comprehensive Action-by-Role Grid
+### 4.1 Comprehensive Action-by-Role Grid
 | Action / Capability | Pharmacist | Cashier | Manager | Admin | High-Access (Simple) | Low-Access (Simple) |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
 | Front-Desk Checkout (B2C/B2B) | No | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
@@ -354,6 +566,20 @@ COMMIT;
 | Direct Master-Data Edit/Create/Delete | No | No | No | **Yes** | **Yes** | No |
 | Approve/Reject Governance Requests | No | No | No | **Yes** | **Yes** | No |
 | Configure Compliance Mode | No | No | No | **Yes** | **Yes** | No |
+
+### 4.2 Comprehensive Two-Tier Authentication & Field Visibility Matrix (v1.6.6)
+| Operational Capability / Action | Tier A: Quick-PIN (Session) | Tier B: Full Argon2id Password |
+|---|:---:|:---:|
+| Cashier Ad-Hoc Discount Override ($\le 15\%$) | Permitted | Permitted |
+| Manager Quick-PIN Discount Override ($\le 100\%$, $\le ₹5,000$/mo) | **Required** | Permitted |
+| High-Liability Offline Discount Override ($> ₹5,000$ pool exhaustion) | Blocked | **Required** |
+| Damaged-on-Shelf Inventory Write-Off | **Required** | Permitted |
+| Schedule H1 Dispense Pharmacist Sign-Off | **Required** | Permitted |
+| Schedule X / NDPS Dispense Custody Verification | Blocked | **Required** |
+| Local User Account Disablement / Revocation | Blocked | **Required** |
+| Master-Data Change Request Approval | Blocked | **Required** |
+| Training Mode Schema Reset / Reinitialization | Blocked | **Required** |
+| Purchase Price Per Unit (`purchase_price_per_unit`) Visibility | Manager/Admin Only | Admin Only |
 
 ---
 
@@ -411,14 +637,12 @@ stateDiagram-v2
    - Cashier one-click action: "Reprint Receipt" -> prints with audited watermark `*** DUPLICATE COPY ***`.
    - Customer abandonment: Customer walks away without receipt. Cashier clicks "Void & Offset" -> System creates automated `sale-return` issuing offsetting `<STORE_CODE>-CN-YYYYMM-XXXX`, restoring stock and preserving monotonic gapless invoice numbering.
 
----
-
 ### 5.5 Low-Stock Alert State Lifecycle & Cooldown Flow
 - **State Machine**:
   1. `NORMAL`: Current base stock > configured low-stock threshold.
-  2. `ALERT_ACTIVE`: Triggered when available base stock drops $\\le$ threshold. POS emits discrete `low-stock-alert` event. Subsequent checkout sales below threshold suppress re-alerting (cooldown period) to prevent log flooding.
-  3. `REPLENISHED`: Inbound `grn` or `stock-move: transfer-receive` raises base stock above threshold $\\rightarrow$ transitions back to `NORMAL`, clearing alert cooldown.
-  4. `CLOSED_DISCONTINUED`: Deliberate Manager `stock-move: write-off` zeroes stock without replenishment intent $\\rightarrow$ transitions to `CLOSED_DISCONTINUED`.
+  2. `ALERT_ACTIVE`: Triggered when available base stock drops $\le$ threshold. POS emits discrete `low-stock-alert` event. Subsequent checkout sales below threshold suppress re-alerting (cooldown period) to prevent log flooding.
+  3. `REPLENISHED`: Inbound `grn` or `stock-move: transfer-receive` raises base stock above threshold $\rightarrow$ transitions back to `NORMAL`, clearing alert cooldown.
+  4. `CLOSED_DISCONTINUED`: Deliberate Manager `stock-move: write-off` zeroes stock without replenishment intent $\rightarrow$ transitions to `CLOSED_DISCONTINUED`.
 
 ### 5.6 Live Discount Edit & Version Verification Flow
 - **State Flow**:
@@ -435,19 +659,51 @@ stateDiagram-v2
   1. `DRAFT`: Store Manager prepares single-field, single-record diff (`field_name`, `current_value`, `proposed_value`, `expected_version`).
   2. `SUBMITTED_PENDING`: Event `master-data-change-requested` committed and synced to Central governance queue.
   3. Central Admin Decision:
-     - `APPROVED`: Admin approves in Web portal $\\rightarrow$ Central applies mutation, increments record version, emits `master-data-change-approved`. Store ingests update via next sync response.
-     - `REJECTED`: Admin rejects $\\rightarrow$ Central emits `master-data-change-rejected` with reason code (`manual`, `stale`, `duplicate`, `stock-remaining`). Store Manager alerted on dashboard.
+     - `APPROVED`: Admin approves in Web portal $\rightarrow$ Central applies mutation, increments record version, emits `master-data-change-approved`. Store ingests update via next sync response.
+     - `REJECTED`: Admin rejects $\rightarrow$ Central emits `master-data-change-rejected` with reason code (`manual`, `stale`, `duplicate`, `stock-remaining`). Store Manager alerted on dashboard.
 
 ### 5.8 Shift Lifecycle & Till Reconciliation State Machine
 - **State Flow**:
-  1. `CLOSED`: Terminal register locked. Cashier enters credentials and opening cash float $\\rightarrow$ POS commits `shift-open` event $\\rightarrow$ Transitions to `OPEN`.
+  1. `CLOSED`: Terminal register locked. Cashier enters credentials and opening cash float $\rightarrow$ POS commits `shift-open` event $\rightarrow$ Transitions to `OPEN`.
   2. `OPEN`: Active billing permitted on this terminal. Transactions record tender split (`cash`, `card`, `upi`, `store-credit`).
-  3. `CLOSING_PENDING_DECLARATION`: Cashier initiates shift close $\\rightarrow$ prompts blind physical cash count (`declared_physical_cash`).
+  3. `CLOSING_PENDING_DECLARATION`: Cashier initiates shift close $\rightarrow$ prompts blind physical cash count (`declared_physical_cash`).
   4. `RECONCILED`: System calculates Till Variance:
-     $$\\text{Variance} = \\text{Declared Cash} - (\\text{Opening Float} + \\text{Cash Sales} - \\text{Cash Refunds})$$
+     $$\text{Variance} = \text{Declared Cash} - (\text{Opening Float} + \text{Cash Sales} - \text{Cash Refunds})$$
      - `Cash Sales` strictly isolates physical cash tenders (`sum(tender_split.cash)`), excluding store credit voucher redemptions and digital payments.
      - POS commits `shift-close` event with tender breakdown. Day-End Z-Report aggregates all terminal shifts for store closing.
-  5. `CLOSED_FORCE`: If cashier leaves terminal open, Store Manager executes emergency supervisory force-close providing physical cash count $\\rightarrow$ commits `shift-force-close` event.
+  5. `CLOSED_FORCE`: If cashier leaves terminal open, Store Manager executes emergency supervisory force-close providing physical cash count $\rightarrow$ commits `shift-force-close` event.
+
+### 5.9 Atomic Exchange 3-Event State Machine (v1.6.6)
+```mermaid
+stateDiagram-v2
+    [*] --> ExchangeInitiated: Customer presents returned item + selected replacement
+    ExchangeInitiated --> ReturnStaged: Inspect returned item (sealed vs damaged)
+    ReturnStaged --> ReplacementStaged: Select replacement batch & calculate price delta
+    ReplacementStaged --> SingleTxBegin: Cashier clicks 'Commit Exchange'
+    SingleTxBegin --> EmitReturn: 1. Commit 'sale-return' -> Generates Credit Note
+    EmitReturn --> EmitRedemption: 2. Commit 'credit-note-redemption' -> Claims Credit Note balance
+    EmitRedemption --> EmitSale: 3. Commit 'sale' -> Bills replacement with Credit Note tender
+    EmitSale --> SingleTxCommit: Single Postgres Transaction Commit (All 3 succeed or all rollback)
+    SingleTxCommit --> PrintReceipt: Print combined Exchange Receipt with audit ref
+    PrintReceipt --> [*]
+```
+
+### 5.10 CDSCO Drug Recall Hard-Block & Cart Removal Flow (v1.6.6)
+1. Central dispatches `batch-recall` event via sync push payload.
+2. Store Primary Node ingests event, immediately setting batch status to `RECALLED_QUARANTINED` in `batches` table.
+3. Active checkout carts scanning the batch receive instant blocking notification: *"Batch is subject to statutory CDSCO drug recall. Sale prohibited."*
+4. Concurrent checkout race defense: If cashier commits cart while recall arrives, checkout commit executes validation query in `COMMITTED_PENDING_PRINT` phase.
+5. If batch recalled, commit aborts with HTTP 409 `DRUG_RECALL_BLOCK`.
+6. POS UI provides non-destructive line removal, allowing customer to purchase remaining non-recalled medications without rebuilding cart.
+
+### 5.11 Manager Quick-PIN Discount Override & Pool Exhaustion State Machine (v1.6.6)
+- **Monthly Store Pool**: ₹5,000 calendar month allocation.
+- **Workflow**:
+  - Cashier enters discount $> 15.0\%$. Terminal prompts for Manager Quick-PIN.
+  - Manager enters 4–6 digit Quick-PIN. System checks `current_month_consumed + override_discount <= 5000.00`.
+  - If pool sufficient: Discount applied, pool incremented, override logged with reason category.
+  - If pool exhausted: Terminal prompts for Emergency High-Access Password override.
+  - Simple Preset fallback: Single High-Access Argon2id Password permits up to ₹1,500 per sale for non-controlled items with $\ge 20$ character audit remark and `emergency_offline_override = true` flag.
 
 ---
 
@@ -470,12 +726,34 @@ stateDiagram-v2
   - Central rejects Manager request with HTTP 409 Conflict: `{"reason": "stale", "current_version": 5}`.
   - Store UI prompts Manager: *"Catalog updated by Central. Reloading latest data."*
 
----
-
 ### 6.3 V2 Enterprise Distributed Edge Cases & Scenarios
 - **Scenario A (Supplier Settlement Partition)**: Store issues sequential vendor return Debit Note (`<STORE>-DN-...`) offline during WAN partition. Distributor settlement is managed locally via physical credit memo; central AP ledger reconciles asynchronously upon sync reconnection via manual GSTR-1 return matching bridge.
 - **Scenario B (Branch Transit Discrepancy Arbitration)**: Inter-store transfer of 100 units arrives at Store B with 10 broken in transit. Store B `transfer-receive` logs 90 received, 10 `transit_breakage_qty` with photo audit. Automatic Delivery Challan (`<STORE>-DC-...`) variance breakdown allocates loss to transit write-off without wedging destination inventory.
 - **Scenario C (Offline Store Credit Cross-Branch Attempt)**: Customer attempts to redeem `<STORE_A>-CN-...` voucher at Store B. Terminal UI enforces issuing-store restriction: *"Store Credit redeemable solely at issuing branch (Store A)."* Distributed 2PL cross-store voucher coordinator is deferred to V2.
+
+### 6.4 CDSCO Recall Race Condition at Checkout (v1.6.6)
+- **Scenario**: Cashier scans Batch BCH-99 at 10:14:50. At 10:14:55, sync worker receives CDSCO recall for BCH-99. Cashier clicks "Tender & Bill" at 10:14:58.
+- **Resolution**:
+  - Backend checkout transaction begins with `SELECT is_recalled FROM batches WHERE batch_id = :id FOR UPDATE;`.
+  - Lock acquires latest state `is_recalled = TRUE`.
+  - Checkout rolls back immediately and returns HTTP 409 Conflict: `{"code": "DRUG_RECALL_BLOCK", "batch_no": "BCH-99"}`.
+  - UI offers non-destructive removal of BCH-99 while retaining other items in cart.
+
+### 6.5 Net Effective Discount Clamping & Stacking Prevention (v1.6.6)
+- **Validation Formula**:
+  $$\text{Line Discount \%} = \frac{\text{Line MRP} - \text{Billed Unit Price}}{\text{Line MRP}} \times 100 \le 15.0\%$$
+- **Zero-MRP Free Supply Exemption**: Zero-MRP items (`is_free_supply = true`) are strictly barred from discount application; formulas bypass division by zero.
+- **Purchase Price Floor**: Billed unit price cannot fall below `purchase_price_per_unit` without Tier B Manager Password override.
+
+### 6.6 Rack Micro-Freeze Concurrent Billing Resolution (v1.6.6)
+- During physical stock-take, Manager applies 5–10 minute rack micro-freeze to `rack_location = 'RACK-B4'`.
+- Batches located on `RACK-B4` are temporarily locked against checkout picking (`picking_status = 'MICRO_FREEZE'`).
+- Cashiers attempting to bill batch from `RACK-B4` are prompted: *"Rack B4 undergoing stock-take (est. 4 min). Select alternate batch or wait."*
+- `rack_location` is store-local and never overwritten by central sync catalog updates.
+
+### 6.7 Unrecognized Barcode Fallback & Phone Search History Masking (v1.6.6)
+- Barcode miss: Scanner reads unregistered EAN/UPC. POS pops up rapid manual drug search modal, while logging gap telemetry event `barcode_gap_miss`.
+- Phone search privacy: Cashier searching by customer phone number views family member names and ages for disambiguation, but previous prescription drug histories remain masked until customer profile is selected and verified.
 
 ---
 
@@ -498,8 +776,6 @@ graph TD
     M-01 --> M-10[M-10: Sync Engine]
 ```
 
----
-
 ### 7.2 V2 Enterprise Module Dependencies & Architectural Roadmap
 - **Phase 2.0 Module Evolution**:
   1. `M-14: Distributor EDI & AP Settlement Gateway` (Depends on M-03, M-08, M-10)
@@ -508,11 +784,48 @@ graph TD
   4. `M-17: Cross-Store Voucher Distributed 2PL Coordinator` (Depends on M-02, M-06, M-10)
   5. `M-18: Edge Prescription Computer Vision OCR` (Depends on M-05, M-07)
 
+### 7.3 Core Dependency Graph & Tier 1–4 Build Order (v1.6.6)
+```mermaid
+graph TD
+    subgraph Tier 1: Foundation Entities
+        T1_GRN[M-01: GRN & Purchase Price]
+        T1_ZeroMRP[M-01: Zero-MRP & DPCO]
+        T1_NDPS[M-05: NDPS & Schedules]
+        T1_UOM[M-01: UOM Immutability]
+    end
+
+    subgraph Tier 2: Core Transactions
+        T2_Exch[M-02: Atomic Exchanges]
+        T2_Refund[M-06: Daily Cash Refund Ceiling]
+        T2_Presc[M-05: Repeat Dispense & Cum Balances]
+        T2_Recall[M-01/M-06: Recall Hard-Block]
+    end
+
+    subgraph Tier 3: Peripheral & Auth
+        T3_Auth[M-11: Two-Tier Auth & Token Gen]
+        T3_Sync[M-10: Paged Transport Staging]
+        T3_Till[M-13: Tender Split Isolation]
+    end
+
+    subgraph Tier 4: Edge Hardening
+        T4_Disk[M-12: Tiered Disk Health]
+        T4_Merkle[M-11/M-13: Merkle Audit Hashing]
+        T4_Backup[M-12: Pre-Flight Migrations]
+    end
+
+    T1_GRN --> T2_Exch
+    T1_NDPS --> T2_Presc
+    T2_Exch --> T3_Till
+    T2_Presc --> T3_Auth
+    T3_Sync --> T4_Disk
+    T3_Auth --> T4_Merkle
+```
+
 ---
 
 ## Doc 8: Test Plan Doc
 
-### Automated Unit & Integration Test Specifications (Tests 1–20)
+### 8.1 Automated Unit & Integration Test Specifications (Tests 1–20)
 1. **Absolute Expiry Hard-Block**: Bill batch with $\text{expiry} < \text{current\_date (IST)}$ in `Optional` compliance mode. Assert: Batches on final day of expiry month remain valid; batches past expiry date are unconditionally hard-blocked.
 2. **UOM Integer Division & Rounding**: Test packaging with MRP ₹10.00 and pack size 7. Assert: Base unit price ₹1.43; buying 7 loose units clamped to ₹10.00 (not ₹10.01).
 3. **UOM Barcode Scan Default**: Scan 2D DataMatrix for strip of 10. Assert: POS defaults to 10 base units on invoice line.
@@ -533,6 +846,16 @@ graph TD
 18. **Windows File ACL Enforcement**: Verify non-privileged OS user cannot read `C:\medpos\config\db_key.env`.
 19. **Prescription Image Edge Prune**: Ingest prescription image older than 90 days with confirmed Central sync. Assert: Edge file purged.
 20. **Backup Retention**: Simulate 10 days of automated `pg_dump`. Assert: Only 7 rolling archives retained.
+
+### 8.2 Automated Test Suite Expansion: Tests 21 through 28 (v1.6.6)
+21. **GRN Short Receipts & Role Gating**: Attempt GRN creation with Cashier role -> Blocked with HTTP 403. Ingest GRN with 10 ordered, 8 received -> Verify 8 added to base stock, shortage of 2 recorded in `goods_receipt_note_items`, Manager review flag set.
+22. **Zero-MRP Validation & Discount Block**: Attempt creating item with `mrp = 0` and `is_free_supply = false` -> Blocked by CHECK constraint. Apply discount to free supply item -> Blocked with zero division bypass.
+23. **Atomic Exchange 3-Event Transaction**: Execute exchange: return ₹150 item and buy ₹150 replacement. Assert single transaction atomicity (`exchange_group_id` links `sale-return`, `credit-note-redemption`, and `sale`). Simulate DB failure on step 3 -> Assert steps 1 and 2 roll back completely, zero dangling credit.
+24. **CDSCO Drug Recall Checkout Hard-Block**: Deliver `batch-recall` event. Attempt checkout of cart containing recalled batch -> Commits fail with HTTP 409 `DRUG_RECALL_BLOCK`. Perform non-destructive line removal -> Verify remaining cart items bill successfully.
+25. **Rule 65(11) Repeat Dispensing Enforcement**: Dispense Schedule H drug with `is_repeatable = false`. Attempt subsequent dispense against same prescription -> Hard-blocked. Ingest repeatable prescription for 30 units -> Dispense 10 units -> Assert cumulative balance shows 20 unfulfilled units.
+26. **Two-Tier Authentication & Token Revocation**: Execute Damaged-on-shelf write-off with Quick-PIN -> Succeeds. Attempt Schedule X dispense with Quick-PIN -> Blocked, requiring Tier B Password. Increment user `token_generation` -> Verify existing JWT rejected within 30 seconds.
+27. **Sync Batch Transport Chunking & Paging**: Transmit 1,200 events partitioned into three 500-event paged payloads (`batch_id`, pages 1/3, 2/3, 3/3). Verify staging in `master_data_staging` and atomic MVCC activation only after final page arrives.
+28. **Till Variance Tender Split Cash Isolation**: Complete sale with split tender ₹200 cash, ₹300 UPI, and ₹100 credit voucher. Settle return with ₹50 cash and ₹50 credit note. Verify till cash formula strictly aggregates ₹200 cash sale and ₹50 cash refund without digital/voucher distortion.
 
 ---
 
@@ -568,8 +891,6 @@ icacls "C:\medpos\config" /inheritance:r /grant:r "NT SERVICE\MedPOS":(R) /grant
 icacls "C:\medpos\data" /inheritance:r /grant:r "NT SERVICE\MedPOS":(F) /grant:r "SYSTEM":(F)
 ```
 
----
-
 ### 9.4 Structured Log Schema & Audit Correlation ID Spec
 - **JSON Log Envelope**:
   ```json
@@ -587,6 +908,24 @@ icacls "C:\medpos\data" /inheritance:r /grant:r "NT SERVICE\MedPOS":(F) /grant:r
   }
   ```
 - **Correlation Propagation**: Every checkout transaction, sync batch push, and manager override generates a UUIDv4 `correlation_id` attached to all downstream DB queries, print spoolers, and audit log entries.
+
+### 9.5 Merkle Tree Audit Hashing Algorithm Specification (v1.6.6)
+- **Algorithm**: Every 4 hours, background daemon queries all events committed in the previous 4-hour window ordered by `store_seq_no ASC`.
+- Each event row computes leaf hash: $H_i = \operatorname{SHA-256}(\text{event\_id} \parallel \text{store\_seq\_no} \parallel \text{created\_at} \parallel \text{payload})$.
+- Pairwise concatenated hashing constructs Merkle tree: $H_{parent} = \operatorname{SHA-256}(H_{left} \parallel H_{right})$.
+- Root hash commits to `audit_merkle_roots` table and exports in next sync heartbeat to Central for tamper detection.
+
+### 9.6 Annual AES-256 Key Rotation & Re-encryption Workflow (v1.6.6)
+- Keys tagged with integer `key_id` in `db_key.env`.
+- Scheduled annual job generates new `key_id = N + 1`.
+- New writes immediately encrypt with Key N+1.
+- Low-priority background worker re-encrypts historic records and prescription scans from Key N to Key N+1, updating `encryption_key_id`.
+
+### 9.7 Progressive Login Throttling & Token Generation Invalidation (v1.6.6)
+- 5 consecutive failed login attempts on `(terminal_id, username)` triggers a 15-minute lock.
+- User table contains `token_generation INTEGER DEFAULT 1`.
+- On security revocation: `UPDATE users SET token_generation = token_generation + 1 WHERE user_id = :id;`.
+- Local JWT verification checks cached `token_generation` (cached in memory with 30s TTL). If mismatch, HTTP 401 Unauthorized is immediately returned.
 
 ---
 
@@ -612,12 +951,10 @@ icacls "C:\medpos\data" /inheritance:r /grant:r "NT SERVICE\MedPOS":(F) /grant:r
   - Critical: `medpos_quarantined_events_total > 0` (Poison-pill detected).
   - High: `medpos_till_variance_rupees < -500` (Cash shortage > ₹500).
 
----
-
 ### 10.3 Canary Rollout Protocol, Rollback Procedures & Edge Checklist
 - **Canary Stage Gate (Store 1 Soak)**:
   - Single pilot store runs new software build for 7 consecutive calendar days.
-  - Go/No-Go Criteria: Zero database rollbacks, zero poison-pill quarantines, zero unreconciled till variance anomalies, sync queue latency $\\le 60$s.
+  - Go/No-Go Criteria: Zero database rollbacks, zero poison-pill quarantines, zero unreconciled till variance anomalies, sync queue latency $\le 60$s.
 - **Alembic Pre-Flight & Rollback Protocol**:
   - Pre-migration edge automated backup: `pg_dump -Fc` before applying migration.
   - Migration scripts must be bidirectional with tested downgrade paths (`alembic downgrade -1`).
@@ -628,6 +965,29 @@ icacls "C:\medpos\data" /inheritance:r /grant:r "NT SERVICE\MedPOS":(F) /grant:r
   - Counter 2 standby configured with `promote_to_primary.bat` and WAL replication slot.
   - NSSM Windows service wrapper installed with 5000ms crash throttle backoff.
   - Thermal printer ESC/POS status checking verified with cash drawer RJ11 pulse kick.
+
+### 10.4 Alembic Pre-Flight Automated Backup Script (v1.6.6)
+```powershell
+# Pre-migration automated edge backup script (run before alembic upgrade head)
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$backupFile = "C:\medpos\backups\pre_migration_$timestamp.dump"
+Write-Host "Creating pre-migration database snapshot to $backupFile..."
+& "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" -U postgres -Fc -f $backupFile medpos
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Pre-migration backup failed! Aborting Alembic migration."
+    exit 1
+}
+Write-Host "Backup completed successfully. Proceeding with Alembic migration..."
+```
+
+### 10.5 Tiered Disk Space Health Response Automation (v1.6.6)
+- **85% Disk Full**: Automated cleanup triggers: deletes application log files $> 14$ days old, runs standard `VACUUM ANALYZE` on Postgres (strictly forbidding `VACUUM FULL` to prevent disk thrashing).
+- **90% Disk Full**: Degraded write mode: non-critical operational telemetry and performance metrics suspended. Sync heartbeats and statutory Schedule X prescription image captures remain prioritized.
+- **98% Disk Full**: Emergency read-only mode: local checkout commits halted to prevent database transaction log corruption; prominent UI banner prompts immediate disk clearing.
+
+### 10.6 Windows LTSC WSUS Maintenance Window & Shutdown Drain (v1.6.6)
+- Windows Update Group Policy configured on Windows 10/11 LTSC: Automatic Updates deferred strictly to 02:00–03:00 local time window.
+- Graceful shutdown daemon: OS shutdown signal triggers 30-second drain period, allowing active checkout commits to finalize while rejecting new cart initiations.
 
 ---
 
@@ -644,3 +1004,9 @@ icacls "C:\medpos\data" /inheritance:r /grant:r "NT SERVICE\MedPOS":(F) /grant:r
 - **CGST Section 34(3) (Debit Note)**: Accounting document issued to vendors when returning goods, reversing Input Tax Credit (ITC).
 - **Rule 46(b) CGST Rules (B2B Offline Pilot Mode)**: Standard B2B tax invoice provisions allowing offline generation with manual monthly upload to GST portal.
 - **Rule 55 CGST Rules (Delivery Challan)**: Statutory document authorizing physical road transport of goods without immediate sale (internal branch transfers within same legal entity/GSTIN).
+
+### 11.3 India Pharmaceutical & GST Statutory Clauses (v1.6.6)
+- **Rule 65(11) Drugs and Cosmetics Rules, 1945**: Explicit statutory prohibition against dispensing medications listed in Schedule H and Schedule H1 more than once on the same prescription unless the prescriber has explicitly written directions indicating the number of times it may be refilled.
+- **Rule 65(11A) NDPS Custody**: Statutory mandate requiring physical and cryptographic dual custody for dispensing narcotics and psychotropics, including state licensing council verification.
+- **Chapter 30 HSN Codes**: Harmonized System of Nomenclature classification for pharmaceutical products (3003, 3004). Enforces mandatory 8-digit HSN codes on all B2B invoices and soft-warning on B2C retail invoices.
+- **DPDP Act 2023 (Digital Personal Data Protection)**: Statutory patient consent requirements for storing personal and prescription medical data in commercial retail systems. Soft-consent capture enabled by default.
