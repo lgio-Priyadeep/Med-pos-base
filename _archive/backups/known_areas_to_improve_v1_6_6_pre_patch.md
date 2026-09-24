@@ -3,8 +3,8 @@
 This document serves as the authoritative, living engineering registry tracking architectural gaps, retail edge cases, regulatory requirements, and technical enhancements for the Pharmacy POS system.
 
 The document is organized into four distinct parts:
-- **[Part I: Active Tactical Improvement Roadmap (v1.6.6 → v1.6.7 Pilot Hardening Patch)](#part-i-active-tactical-improvement-roadmap-v166--v167-pilot-hardening-patch)**: 15 verified, sequenced tactical enhancements across Tiers 1–4 with mathematical invariants, statutory citations, and second-order defensive safeguards.
-- **[Part II: Active Priority vs. Complexity Roadmap Matrix](#part-ii-active-priority-vs-complexity-roadmap-matrix)**: Strategic matrix evaluating Impact vs. Complexity for both **Track A (Tactical v1.6.7 Items 1–15)** and **Track B (Deferred Enterprise Items 1–12)**.
+- **[Part I: Active Tactical Improvement Roadmap (v1.6.6 → v1.7 Pilot Hardening)](#part-i-active-tactical-improvement-roadmap-v166--v17-pilot-hardening)**: 15 verified, sequenced tactical enhancements across Tiers 1–4 with mathematical invariants, statutory citations, and second-order defensive safeguards.
+- **[Part II: Active Priority vs. Complexity Roadmap Matrix](#part-ii-active-priority-vs-complexity-roadmap-matrix)**: Strategic matrix evaluating Impact vs. Complexity for both **Track A (Tactical v1.7 Items 1–15)** and **Track B (Deferred Enterprise Items 1–12)**.
 - **[Part III: Active Enterprise Roadmap (Phase 2.0 Chain Scale — Track B Deferred Items)](#part-iii-active-enterprise-roadmap-phase-20-chain-scale--track-b-deferred-items)**: Detailed analysis of the 12 enterprise capabilities intentionally deferred for the V2 Major Iteration with codified interim bridges in [architecture_v1_6_6.md](architecture_v1_6_6.md) (§18 D-120).
 - **[Part IV: Historical Milestone Archive](#part-iv-historical-milestone-archive)**:
   - **[Section A: v1.6.5 → v1.6.6 Resolved Baseline](#section-a-v165--v166-resolved-baseline)**: Verified record of the 60 verified tactical patch items across Tiers 1–4 codified into [architecture_v1_6_6.md](architecture_v1_6_6.md) and [ROUTED-DETAIL.md](ROUTED-DETAIL.md).
@@ -13,10 +13,10 @@ The document is organized into four distinct parts:
 
 ---
 
-## Part I: Active Tactical Improvement Roadmap (v1.6.6 → v1.6.7 Pilot Hardening Patch)
+## Part I: Active Tactical Improvement Roadmap (v1.6.6 → v1.7 Pilot Hardening)
 
 > [!NOTE]
-> **Status in v1.6.6**: All 60 tactical patch items from previous iterations have been fully resolved and codified into [architecture_v1_6_6.md](architecture_v1_6_6.md) (Decisions D-126 through D-175, Tests 21 through 28) and [ROUTED-DETAIL.md](ROUTED-DETAIL.md). Part I below represents the active engineering registry of 15 verified tactical enhancements identified through line-by-line cross-reference auditing, deep-layer constraint stress-testing, and second-order defensive hardening of Architecture Spec v1.6.6 for the **v1.6.7 Pilot Hardening Patch**.
+> **Status in v1.6.6**: All 60 tactical patch items from previous iterations have been fully resolved and codified into [architecture_v1_6_6.md](architecture_v1_6_6.md) (Decisions D-126 through D-175, Tests 21 through 28) and [ROUTED-DETAIL.md](ROUTED-DETAIL.md). Part I below represents the active engineering registry of 15 verified tactical enhancements identified through line-by-line cross-reference auditing and second-order stress-testing of Architecture Spec v1.6.6.
 
 ### Implementation Sequencing & Dependency Chains
 
@@ -48,59 +48,43 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 - **v1.6.6 Baseline ([§6 D-48, D-57](architecture_v1_6_6.md#6-stock-inventory-lifecycle--batch-mechanics), [§8 D-135](architecture_v1_6_6.md#8-invoicing-gst-credit-notes-debit-notes-challans--exchanges)):**
   Specifies that barcode scans bill 1 Packaging Unit and 2D scans override FEFO. Unrecognized barcodes prompt manual search (D-135).
 - **Retail Reality & Specification Gap:**
-  Under CDSCO Notification G.S.R. 823(E), the top 300 pharmaceutical formulation brands must print GS1 DataMatrix 2D barcodes encoding Application Identifiers (AIs): `(01)` GTIN (14 digits), `(10)` Batch Number (up to 20 alphanumeric chars), `(17)` Expiry Date (YYMMDD), and `(21)` Serial Number. Currently, no parsing grammar or scanner wedge handling is defined. When a 2D scanner in USB Keyboard Wedge mode scans a pack, it outputs an encoded string (e.g. `]d201089012345678901726093010B1234521987654321`). Without a native parser, the POS treats this as a literal 1D barcode string, fails to match `catalog_items.barcode`, and forces cashiers to manually type batches.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
-  - *AIM Symbology Header Sanitization*: Client-side parser strips leading AIM identifiers (`^\][a-zA-Z0-9]{2}`) before tokenization.
-  - *Fixed-Length AI Parsing*: Fixed-length elements parse deterministically: AI `(01)` GTIN (14 digits) $\rightarrow$ matches `catalog_items.gtin` or `catalog_items.barcode`; AI `(17)` Expiry (`YYMMDD`) $\rightarrow$ parses to calendar expiry date.
-  - *Bounded Variable-Length AI Parsing*: For variable elements AI `(10)` Batch and AI `(21)` Serial:
-    - If FNC1 ASCII `\x1d` is preserved by scanner firmware, it splits strictly on `\x1d`.
-    - If scanner wedge configuration strips `\x1d`, the parser executes a **bounded prefix match** against active batches for that GTIN in `store_batches`, asserting that the remainder of the string strictly begins with a valid subsequent AI (`21` for serial, `17` for expiry) or end-of-string.
-  - *Prefix Collision Disambiguation*: If two active batches share a leading prefix (e.g., `B12` and `B122`), the UI renders a 2-second quick-select modal. If cashier does not intervene within 2 seconds, system defaults to nearest expiry (FEFO priority D-56).
-  - Scanned batch auto-selects in the POS checkout line and defaults to 1 Packaging Unit ($1 \times \text{pack\_size}$ base units) per D-48.
+  Under CDSCO Notification G.S.R. 823(E), the top 300 pharmaceutical formulation brands must print GS1 DataMatrix 2D barcodes encoding Application Identifiers (AIs): `(01)` GTIN (14 digits), `(10)` Batch Number (up to 20 alphanumeric chars), `(17)` Expiry Date (YYMMDD), and `(21)` Serial Number. Currently, no parsing grammar or scanner wedge handling is defined. When a 2D scanner in USB Keyboard Wedge mode scans a pack, it outputs an encoded string (e.g. `01089012345678901726093010B1234521987654321`). Without a native parser, the POS treats this as a literal 1D barcode string, fails to match `catalog_items.barcode`, and forces cashiers to manually type batches.
+- **Hardened Technical Specification & Invariants:**
+  - Client-side GS1 regex parser: Fixed-length elements parse deterministically: AI `(01)` GTIN (14 digits) $\rightarrow$ matches `catalog_items.gtin` or `catalog_items.barcode`; AI `(17)` Expiry (`YYMMDD`) $\rightarrow$ parses to calendar expiry date.
+  - Variable-length elements: AI `(10)` Batch and AI `(21)` Serial use ASCII Group Separator `\x1d` (FNC1). If scanner wedge configuration strips `\x1d`, the parser executes a **longest-prefix match** against active batches for that GTIN in `store_batches`.
+  - Scanned batch auto-selects in the POS checkout line and defaults to 1 Packaging Unit (D-48).
 - **Second-Order Ripple-Effect Guards:**
   - *Expiry Mismatch Alert*: If the scanned 2D expiry date differs from the database batch record (due to manual GRN entry typo), the system allows the scan but prompts an advisory alert: *"Scanned pack expiry (MM/YYYY) differs from batch master. Updating local batch record."*
   - *1D & FEFO Fallback*: Preserves 1D barcode scanning and manual FEFO selection for loose blister strips that lack outer box 2D printing.
-  - *Inbound GRN Auto-Populate*: Handheld 2D scanning is enabled on the Inbound GRN line-entry screen, automatically populating GTIN, batch number, and expiry date directly from the box scan, eliminating manual typos at source.
 
-#### 2. Distributor Trade Schemes & Dual-UOM Landed Cost Derivation ("10 + 2 Free")
+#### 2. Distributor Trade Schemes & Landed Cost Derivation ("10 + 2 Free")
 - **v1.6.6 Baseline ([§6 D-127, D-128](architecture_v1_6_6.md#6-stock-inventory-lifecycle--batch-mechanics), [§9 D-139](architecture_v1_6_6.md#9-discounts--price-governance)):**
   Defines `purchase_price_per_unit` on GRN, short receipts (D-128), and mandates that sale prices cannot drop below `purchase_price_per_unit` without Manager override (D-139).
 - **Financial Reality & Specification Gap:**
-  In Indian pharmaceutical distribution, trade schemes are ubiquitous ("Buy 10 packs, get 2 free" or "5% trade discount on bill"). In [ROUTED-DETAIL.md §1.7](ROUTED-DETAIL.md#17-goods-receipt-note-grn--short-receipts-table-schema-v166), `goods_receipt_note_items` only captures `ordered_pack_qty`, `received_pack_qty`, and `purchase_price_per_unit`. If 10 packs are billed at ₹100 each (₹1,000) and 2 packs are received free (12 packs total), the true landed cost is $\text{₹}1,000 / 12 = \text{₹}83.33$. If the system records purchase price as ₹100, selling at ₹90 falsely triggers the D-139 below-cost block, and margin reports show 0% on commercial lines and 100% on bonus lines. Furthermore, dividing by pack size without storing pack vs loose dimensions introduces a 10x UOM mismatch against loose tablet sales.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  In Indian pharmaceutical distribution, trade schemes are ubiquitous ("Buy 10 packs, get 2 free" or "5% trade discount on bill"). In [ROUTED-DETAIL.md §1.7](ROUTED-DETAIL.md#17-goods-receipt-note-grn--short-receipts-table-schema-v166), `goods_receipt_note_items` only captures `ordered_pack_qty`, `received_pack_qty`, and `purchase_price_per_unit`. If 10 packs are billed at ₹100 each (₹1,000) and 2 packs are received free (12 packs total), the true landed cost is $\text{₹}1,000 / 12 = \text{₹}83.33$. If the system records purchase price as ₹100, selling at ₹90 falsely triggers the D-139 below-cost block, and margin reports show 0% on commercial lines and 100% on bonus lines.
+- **Hardened Technical Specification & Invariants:**
   - Extend `goods_receipt_note_items` schema:
-    ```sql
-    ALTER TABLE goods_receipt_note_items 
-      ADD COLUMN volume_discount_bonus_units INTEGER NOT NULL DEFAULT 0 CHECK (volume_discount_bonus_units >= 0),
-      ADD COLUMN trade_discount_pct NUMERIC(5,2) NOT NULL DEFAULT 0.00 CHECK (trade_discount_pct BETWEEN 0 AND 100),
-      ADD COLUMN effective_landed_cost_per_pack NUMERIC(10,4) NOT NULL,
-      ADD COLUMN effective_landed_cost_per_base_unit NUMERIC(10,4) NOT NULL;
-    ```
-  - *Creditable GST Capitalization Exclusion*: For GST-registered pharmacies claiming Input Tax Credit (ITC) under Section 16 of the CGST Act, creditable CGST/SGST is **not** capitalized into inventory cost. Tax is tracked as an ITC asset. Landed cost incorporates only base net purchase rate plus non-creditable transit/cess:
-    $$\text{Effective Pack Cost} = \frac{(\text{Billed Packs} \times \text{Invoice Rate} \times (1 - \frac{\text{Trade Disc \%}}{100})) + \text{NonCreditableExpense}}{\text{Billed Packs} + \text{Bonus Packs}}$$
-    $$\text{Effective Base Unit Cost} = \frac{\text{Effective Pack Cost}}{\text{pack\_size}}$$
-  - Total available base inventory increments by: $(\text{received\_pack\_qty} + \text{volume\_discount\_bonus\_units}) \times \text{pack\_size}$.
-  - In `store_batches`, `purchase_price_per_unit` is populated with `effective_landed_cost_per_pack`.
-  - Discount Floor Guard (D-139) evaluates:
-    - For Pack Billing: $\text{Pack Price} \ge \text{effective\_landed\_cost\_per\_pack}$.
-    - For Loose Unit Billing: $\text{Unit Price} \ge \text{effective\_landed\_cost\_per\_base\_unit}$.
+    `scheme_free_pack_qty INTEGER NOT NULL DEFAULT 0 CHECK (scheme_free_pack_qty >= 0)`,
+    `trade_discount_pct NUMERIC(5,2) NOT NULL DEFAULT 0.00 CHECK (trade_discount_pct >= 0 AND trade_discount_pct <= 100.00)`,
+    `effective_landed_cost_per_unit NUMERIC(10,4) NOT NULL`.
+  - Mathematical Derivation Invariant:
+    $$\text{Effective Unit Cost} = \frac{(\text{Billed Pack Qty} \times \text{Invoice Rate} \times (1 - \frac{\text{Discount \%}}{100})) + \text{Inbound Tax}}{(\text{Billed Pack Qty} + \text{Scheme Free Pack Qty}) \times \text{Pack Size}}$$
+  - Total available base inventory increments by: $(\text{received\_pack\_qty} + \text{scheme\_free\_pack\_qty}) \times \text{pack\_size}$.
+  - In `store_batches`, `purchase_price_per_unit` is populated with `effective_landed_cost_per_unit`, ensuring D-139 evaluates against true cost.
 - **Second-Order Ripple-Effect Guards:**
-  - *RTV Debit Note Commercial Reversal Guard*: While internal pricing uses effective landed cost, `goods_receipt_note_items` immutably retains original `purchase_price_per_unit` (gross invoice rate) and `volume_discount_bonus_units`. When issuing a vendor Debit Note (`<STORE>-DN-...`) for near-expiry returns (§8 D-74), the system computes credit reversals based on `effective_landed_cost_per_pack`, preventing distributor claim rejections.
-  - *GST Section 15(3) vs Section 17(5)(h) Invariant*: Complies with CBIC Circular No. 92/11/2019-GST: volume discounts with bonus goods are treated as composite price adjustments under Section 15(3) with 100% allowable Input Tax Credit (ITC) on the net tax charged, completely bypassing Section 17(5)(h) "free gift" restrictions.
+  - *RTV Debit Note Commercial Reversal Guard*: While internal pricing uses effective landed cost, `goods_receipt_note_items` immutably retains original `purchase_price_per_unit` (gross invoice rate) and `scheme_free_pack_qty`. When issuing a vendor Debit Note (`<STORE>-DN-...`) for near-expiry returns (§8 D-74), the system computes tax and credit reversals based on original distributor contract terms, preventing distributor claim rejections.
+  - *GST Section 15(3) Invariant*: Complies with CBIC Circular No. 92/11/2019-GST: volume discounts with free goods are treated as composite price adjustments with 100% allowable Input Tax Credit (ITC) on the net tax charged.
 
 #### 3. Near-Expiry Distributor Quarantine Tote Bins & Pre-Acceptance Rejections (Resolving §18 Q2)
 - **v1.6.6 Baseline ([§6 D-50, D-51](architecture_v1_6_6.md#near-expiry-vendor-returns-rtv--transfers), [§18 Open Architecture Questions](architecture_v1_6_6.md#18-open-items-phase-2-roadmap--v2-chain-scale)):**
   Triggers `stock-move: rtv-quarantine` for shelf-expiry alert tiers (90d Amber / 60d Orange / 30d Red). §18 flags Open Question Q2: *"Should RTV shelf-quarantine group expired batches into distributor physical tote bins? Target: v1.7 Sprint 1"*.
 - **Operational Reality & Specification Gap:**
-  Pharmacies currently dump near-expiry stock from all distributors into a single generic quarantine box. When distributor sales representatives arrive to collect expired goods, the pharmacist must manually search through hundreds of bottles and loose strips to sort batches for that specific distributor's Debit Note. However, a small retail pharmacy (150 sq. ft.) cannot physically hold 30–50 distinct plastic bins. Furthermore, damaged goods delivered on the delivery van (crushed boxes, leaking syrups) lack an auditable pre-acceptance rejection mechanism, creating GSTR-2B balance mismatches.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
-  - Formally resolves §18 Q2: Introduces **Logical Shelf Partitions** tagged with distributor barcode labels (`TOTE-DIST-XX`) bound to `distributors.distributor_id`, fitting multiple distributors onto shared shelf racks.
+  Pharmacies currently dump near-expiry stock from all distributors into a single generic quarantine box. When distributor sales representatives arrive to collect expired goods, the pharmacist must manually search through hundreds of bottles and loose strips to sort batches for that specific distributor's Debit Note. Furthermore, damaged goods delivered on the delivery van (crushed boxes, leaking syrups) lack an auditable pre-acceptance rejection mechanism.
+- **Hardened Technical Specification & Invariants:**
+  - Formally resolves §18 Q2: Introduce physical/logical `rtv_tote_id` (e.g. `TOTE-DIST-04`) bound to `distributors.distributor_id`.
   - When batches enter Orange (60d) or Red (30d) tiers, POS UI prompts: *"Move Batch {batch_no} to Shelf Tote {rtv_tote_id} ({distributor_name})"*.
-  - When generating an RTV Debit Note (`<STORE>-DN-...`), selecting a distributor auto-aggregates all batches currently staged in that distributor's logical tote.
-  - *Inbound Pre-Acceptance Rejection & GSTR-2B Inward Match*:
-    1. GRN books the gross invoice as declared by the distributor (ensuring 100% match with distributor's GSTR-1 in GSTR-2B).
-    2. Simultaneously generates an automated **Supplier Inbound Discrepancy Debit Note** (`<STORE>-DN-...`) for rejected damaged goods (`rejected_pack_qty` and `rejection_reason ENUM ('DAMAGED_IN_TRANSIT', 'SHORT_EXPIRY_DELIVERED', 'SPECIFICATION_MISMATCH')`).
-    3. Prints a physical signed Delivery Rejection Slip for the delivery driver to acknowledge. Rejected stock never touches active inventory.
+  - When generating an RTV Debit Note (`<STORE>-DN-...`), selecting a distributor auto-aggregates all batches currently staged in that distributor's tote.
+  - Inbound Pre-Acceptance Rejection: Add `rejected_pack_qty` and `rejection_reason ENUM ('DAMAGED_IN_TRANSIT', 'SHORT_EXPIRY_DELIVERED', 'SPECIFICATION_MISMATCH')` to `goods_receipt_note_items`. Rejected quantities do NOT enter inventory or gross payable totals, logging directly to a Distributor Delivery Rejection Log.
 - **Second-Order Ripple-Effect Guards:**
   - *Multi-Distributor Batch Collision Guard*: If the same medicine batch was purchased from Distributor A on Monday and Distributor B on Friday, near-expiry quarantine allocates batches to distributor totes using **FIFO allocation against inbound GRN receipts**, ensuring returns to any distributor never exceed the net quantity supplied by them.
 
@@ -112,19 +96,14 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 - **v1.6.6 Baseline ([§8 D-69](architecture_v1_6_6.md#checkout-workflow--peripheral-resilience), [§18 Open Architecture Questions](architecture_v1_6_6.md#18-open-items-phase-2-roadmap--v2-chain-scale)):**
   Prints dynamic NPCI UPI QR string (`upi://pay?...`) on thermal receipts with soundbox confirmation. §18 flags Open Question Q1: *"Dynamic UPI QR scanned but webhook stalls: max cashier wait before cash fallback? Target: v1.7 Sprint 1"*.
 - **Operational Reality & Specification Gap:**
-  When network latency stalls UPI payment confirmation, cashiers wait 30–60 seconds, switch the transaction to Cash, and complete the sale. 30 seconds later, the customer's UPI payment succeeds and the soundbox announces "₹500 received on UPI". The store merchant account has received ₹500, the physical cash drawer holds ₹500, creating an unallocated surplus and cashier theft temptation. Issuing a GST Credit Note (`-CN-`) illegally reduces sales turnover for goods actually sold.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  When network latency stalls UPI payment confirmation, cashiers wait 30–60 seconds, switch the transaction to Cash, and complete the sale. 30 seconds later, the customer's UPI payment succeeds and the soundbox announces "₹500 received on UPI". The store merchant account has received ₹500, the physical cash drawer holds ₹500, creating an unallocated surplus and severe cashier theft temptation (cashier pocketing cash from the till).
+- **Hardened Technical Specification & Invariants:**
   - Formally resolves §18 Q1: Implements a configurable **60-second UPI polling timeout** on the POS checkout screen.
   - When cashier switches to Cash, POS marks invoice as `COMMITTED_PENDING_UPI_RECONCILE` for a 5-minute window.
   - If a delayed UPI webhook credit confirms within the window:
     - POS triggers an audible chime and displays a **Payment Collision Modal**:
-      1. *Immediate Cash Return (Customer Present)*: Cashier returns ₹500 physical cash to the customer. To prevent cashier theft, this **strictly requires customer OTP verification or signature**. If customer device is dead/unavailable, Store Manager Tier A Quick-PIN bypasses OTP with logged reason `CUSTOMER_DEVICE_UNAVAILABLE`. System emits `tender_switch_cash_reversal: 500.00`.
-      2. *Customer Advance Voucher (Customer Departed, Phone on Record)*: If customer has departed (>60 seconds post-commit), **cash return is strictly locked**. To comply with CGST Act Section 34 and Notification No. 66/2017-Central Tax, system **strictly prohibits issuing a GST Credit Note (`-CN-`)**. It registers a new orthogonal numbering series and issues a non-taxable **Customer Advance / Deposit Voucher**:
-         ```sql
-         -- Format: <STORE_CODE>-ADV-YYYYMM-XXXX
-         ```
-         dispatched via automated WhatsApp/SMS voucher link.
-      3. *Automated EOD Reversal (Customer Departed, Anonymous / Phone is NULL)*: Transaction logs to `unallocated_digital_surplus` and stages an automated end-of-day bank gateway reversal back to customer's VPA.
+      1. *Immediate Cash Return (Customer Present)*: Cashier returns ₹500 physical cash to the customer. To prevent cashier theft, this **strictly requires customer OTP verification or signature**. System emits `tender_switch_cash_reversal: 500.00`.
+      2. *Automated Store Credit (Customer Departed)*: If customer has departed (>60 seconds post-commit), **cash return is strictly locked**. System automatically generates a Customer Store Credit Note (`<STORE>-CN-...`) linked to customer's mobile number, dispatching an automated WhatsApp/SMS voucher link.
 - **Second-Order Ripple-Effect Guards:**
   - *Till Variance Invariant (§13 D-103)*: To prevent double-counting or false shortage alerts, the physical till variance formula is updated:
     $$\text{Expected Cash} = \text{Opening Float} + \text{Cash Sales} - \text{Cash Refunds} - \text{Tender Switch Cash Reversals}$$
@@ -134,44 +113,40 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 - **v1.6.6 Baseline ([§8 D-133](architecture_v1_6_6.md#returns-cash-refund-limits--atomic-exchanges)):**
   Defines a daily counter cash refund limit and split settlement (`refund_settlement: {cash, store_credit}`).
 - **Financial Reality & Specification Gap:**
-  D-133 does not restrict cash refunds on items originally paid via digital tenders (UPI / Card). In retail pharmacy operations, refunding cash on card purchases is a primary vector for stolen card cashing and exposes the business to chargeback double-loss. Furthermore, during offline WAN partitions, real-time gateway reversal APIs cannot execute.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  D-133 does not restrict cash refunds on items originally paid via digital tenders (UPI / Card). In retail pharmacy operations, refunding cash on card purchases is a primary vector for stolen card cashing and exposes the business to chargeback double-loss (bank claws back digital funds while the pharmacy already handed out physical cash).
+- **Hardened Technical Specification & Invariants:**
   - Enforce **Original Tender Alignment Invariant**:
     - If `original_tender == 'CASH'` $\rightarrow$ Cash refund permitted up to counter daily limit (D-133).
     - If `original_tender IN ('UPI', 'CARD', 'ONLINE')` $\rightarrow$ System **defaults strictly to Store Credit Note (`<STORE>-CN-...`)** or digital gateway reversal.
     - If `original_tender == 'STORE_CREDIT'` $\rightarrow$ Return refund is strictly re-credited as `store_credit`. Refunding store credit as cash is unconditionally hard-blocked.
   - Same-Day Digital Gateway Reversal: For same-day returns prior to batch settlement (23:59 IST), POS initiates an automated refund API reversal back to customer's source account.
-  - *Offline Gateway Staging Queue*: If WAN is offline, POS commits a `PENDING_GATEWAY_REVERSAL` event and prints a customer receipt with a bank tracking reference ID, executing upon WAN recovery.
   - Cash Refund Exception on Digital Sales: Permitted *only* under Store Manager Tier B Argon2id Password verification and mandatory customer government ID (Aadhaar / Voter ID) capture.
 
 #### 6. Counter 3 Worker Discovery & Split-Brain Standby Re-connection Fencing
 - **v1.6.6 Baseline ([§2 D-12, D-13, D-14, D-15](architecture_v1_6_6.md#2-tech-stack--edge-infrastructure)):**
   Counter 1 is primary; Counter 2 is warm standby promoted via `promote_to_primary.bat` with ping fencing; Counter 3 is worker UI.
 - **High Availability Gap & Network Fragility:**
-  Worker UI shells lose connection during mDNS renaming, and a rebooting Counter 1 can create split-brain dual primaries. Blindly requiring a 2-out-of-3 quorum deadlocks failover during morning shifts when Counter 3 is powered off.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  1. *Worker Re-routing Failure*: When Counter 2 promotes to Primary, Counter 3 is still pointed at `medpos-primary.local`. If Counter 2 claims `medpos-primary.local` via dynamic mDNS, mDNS conflict resolution (RFC 6762) forces Counter 2 to rename to `medpos-primary-2.local`, stranding Counter 3.
+  2. *Reboot Split-Brain Hazard*: If Counter 1 had a temporary power cord disconnect, Counter 2 promoted (adopting epoch `-F1` and jumping sequences +100,000). When Counter 1 boots back up, it starts Postgres and FastAPI on `0.0.0.0:8000`, causing two concurrent primaries on the LAN accepting conflicting writes.
+- **Hardened Technical Specification & Invariants:**
   - Worker Deterministic Dual-Host Probing: Counter 3 UI shell is configured with a deterministic host list:
     `Primary: medpos-primary.local (192.168.1.10)` $\rightarrow$ `Standby: medpos-standby.local (192.168.1.11)`.
-    If Primary is unreachable for $>5$ seconds, Counter 3 queries `medpos-standby.local:8000/api/node/role`. If standby returns `role: PRIMARY`, Counter 3 connects immediately.
-  - Multi-IP SAN TLS Certificate: The store TLS certificate pre-bakes all counter IPs into its Subject Alternative Names:
-    `DNS:medpos-primary.local, IP:192.168.1.10, IP:192.168.1.11, IP:192.168.1.12`.
-  - Dual Fencing Guards:
-    - Counter 1 Boot Fencing Hook: In Counter 1's service startup wrapper (`start_medpos.bat`), execute a pre-flight probe:
-      Queries `http://192.168.1.11:8000/api/node/role` (Counter 2). If Counter 2 responds `role: PRIMARY` (epoch `-F1` active), Counter 1's service **immediately halts and aborts startup**, writing a critical syslog event: `HALT_DEMOTED_STANDBY_ACTIVE`.
-    - Runtime Heartbeat Watchdog: Counter 1 runs a continuous 10s background probe; if Counter 2 broadcasts `role: PRIMARY` (epoch `-F1`), Counter 1 immediately locks checkouts to read-only.
-  - **Active-Session Witness Quorum Rule**: Counter 2 requires Counter 3 reachability confirmation **only if Counter 3 was connected within the last 60 seconds** (`last_seen_at < 60s`). If Counter 3 was already powered off, Counter 2 promotes after 3 failed pings to Counter 1 (15s) with a mandatory Store Manager Tier A Quick-PIN confirmation in `promote_to_primary.bat`.
+    If Primary is unreachable for $>5$ seconds, Counter 3 queries `medpos-standby.local:8000/api/node/role`. If standby returns `role: PRIMARY`, Counter 3 connects immediately. Because Counter 2 holds the identical store TLS certificate (D-158), pinned TLS verification succeeds.
+  - Counter 1 Boot Fencing Hook: In Counter 1's service startup wrapper (`start_medpos.bat`), execute a pre-flight probe:
+    - Queries `http://192.168.1.11:8000/api/node/role` (Counter 2).
+    - If Counter 2 responds `role: PRIMARY` (epoch `-F1` active), Counter 1's service **immediately halts and aborts startup**, writing a critical syslog event: `HALT_DEMOTED_STANDBY_ACTIVE`.
+    - Counter 1 cannot accept writes until Store Manager or Admin executes a formal WAL resync and demotion script.
 
 #### 7. Pre-Flight Database Migration Free Disk Space Safety Guard
 - **v1.6.6 Baseline ([§2 D-163](architecture_v1_6_6.md#2-tech-stack--edge-infrastructure), [§17 D-165](architecture_v1_6_6.md#17-deployment-safety--edge-rollout)):**
   Specifies Alembic migrations with pre-flight edge backups (`pg_dump -Fc`) and tiered disk responses (85% log prune / 90% degraded / 98% read-only).
 - **Edge Risk & Specification Gap:**
-  In [ROUTED-DETAIL.md §10.4](ROUTED-DETAIL.md#104-alembic-pre-flight-automated-backup-script-v166), `pre_migration_backup.ps1` executes `pg_dump.exe` blindly. If an edge SSD is at 83% capacity, dumping an 8 GB database consumes ~3-5 GB, pushing disk usage past 90% or 98%, bricking the database mid-migration. Overly conservative formulas dead-lock budget SSDs.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
-  - Calibrated Space Capacity Formula (for custom-format compressed dumps `-Fc`, achieving 4:1 compression):
-    $$\text{Free Disk Space Bytes} \ge (0.5 \times \text{pg\_database\_size('medpos')}) + 1\text{ GB safety margin}$$
+  In [ROUTED-DETAIL.md §10.4](ROUTED-DETAIL.md#104-alembic-pre-flight-automated-backup-script-v166), `pre_migration_backup.ps1` executes `pg_dump.exe` blindly. If an edge SSD is at 83% capacity, dumping an 8 GB database consumes ~3-5 GB, pushing disk usage past 90% or 98%, bricking the database mid-migration.
+- **Hardened Technical Specification & Invariants:**
+  - Calibrated Space Capacity Formula: Update `pre_migration_backup.ps1` to assert:
+    $$\text{Free Disk Space Bytes} \ge (1.5 \times \text{pg\_database\_size('medpos')}) + 1\text{ GB safety margin}$$
   - Automated Pre-Dump Headroom Reclamation: Script auto-deletes rotated application logs older than 3 days prior to evaluating free space.
   - Safe Abort Invariant: If available disk space remains below the threshold, migration aborts cleanly (`ERR_INSUFFICIENT_MIGRATION_SPACE`) without running `pg_dump` or applying Alembic migrations.
-  - Emergency Hotfix Bypass: Supports `--skip-backup-space-check` requiring Admin credentials to unblock emergency schema hotfixes on budget 32GB/64GB SSDs.
 
 ---
 
@@ -181,83 +156,57 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 - **v1.6.6 Baseline ([§10.1 D-143](architecture_v1_6_6.md#101-absolute-expiry-hard-block--drug-recalls)):**
   Ingestion of `batch-recall` in sync payload auto-quarantines batches and hard-blocks active checkout transactions with non-destructive line removal.
 - **Clinical/Legal Gap & Patient Safety Risk:**
-  Decision D-143 protects *future* sales of recalled drugs, but has zero mechanism to trace patients who *already purchased* that batch prior to the recall notice. Under the Drugs & Cosmetics Act and CDSCO Good Distribution Practices, pharmacies must trace and notify patients for Class I/II recalls (e.g. contaminated pediatric syrups). Dynamic SMS text risks TRAI DLT blocks and DPDP Act privacy violations on shared family numbers.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  Decision D-143 protects *future* sales of recalled drugs, but has zero mechanism to trace patients who *already purchased* that batch prior to the recall notice. Under the Drugs & Cosmetics Act and CDSCO Good Distribution Practices, pharmacies must trace and notify patients for Class I/II recalls (e.g. contaminated pediatric syrups).
+- **Hardened Technical Specification & Invariants:**
   - Upon ingesting `batch-recall`, Counter 1 automatically queries past sales:
-    ```sql
-    SELECT i.invoice_number, i.created_at, p.patient_name, p.phone_number, l.billed_base_qty, d.doctor_name 
-    FROM invoice_line_items l 
-    JOIN invoices i ON l.invoice_id = i.invoice_id 
-    LEFT JOIN patient_directory p ON i.patient_id = p.patient_id 
-    LEFT JOIN prescriber_directory d ON i.prescriber_id = d.prescriber_id 
-    WHERE l.batch_id = :recalled_batch_id;
-    ```
-  - FastAPI service layer decrypts PII application-side using store keys.
+    `SELECT i.invoice_number, i.created_at, p.patient_name, p.phone_number, l.quantity, d.doctor_name FROM invoice_lines l JOIN invoices i ON l.invoice_id = i.id LEFT JOIN patient_directory p ON i.patient_id = p.id LEFT JOIN prescriber_directory d ON i.prescriber_id = d.id WHERE l.batch_id = :recalled_batch_id;`
   - Instantiates a **Patient Recall Action Register** on the Store Manager and Pharmacist dashboard.
   - Generates:
     1. One-click Drug Inspector Statutory Compliance Report (CSV/PDF).
-    2. DPDP-Compliant Outbound WhatsApp/SMS notification template queue masking clinical indications:
-       *"Precautionary Notice: A medicine dispensed on {date} at MedPOS requires verification. Please click {short_url} or contact store."*
-  - Telecom Compliance: Pre-registers 3 static TRAI DLT templates with telecom portals (Class I, II, III recalls).
+    2. Outbound WhatsApp/SMS notification template queue (*"URGENT: Batch {batch_no} of {drug_name} recalled by CDSCO. Stop use immediately and return to store for full refund."*).
 - **Second-Order Ripple-Effect Guards:**
   - *DPDP Act Role-Gating*: Access to the Patient Recall Register is role-gated strictly to **Store Manager and Registered Pharmacist**. Cashiers have zero access.
   - *Clinical Human-in-the-Loop Release*: Alerts do NOT dispatch automatically; the Registered Pharmacist must review clinical severity (Class I toxicity vs Class III packaging typo) and click `[Authorize & Dispatch Recall Alerts]`, preventing public panic over minor labeling defects.
 
-#### 9. DPCO Statutory National Ceiling Price Invariant & Historical WPI Ledger
+#### 9. DPCO Statutory National Ceiling Price Invariant & Validation
 - **v1.6.6 Baseline ([§9 D-139](architecture_v1_6_6.md#9-discounts--price-governance)):**
   Explicitly references: *"DPCO price-controlled scheduled drugs are hard-blocked from cashier discretionary discounts."*
 - **Regulatory Gap & Criminal Liability:**
-  In [ROUTED-DETAIL.md §1.8](ROUTED-DETAIL.md#18-drug-classification-ndps--zero-mrp-constraints-v166), `catalog_items` only has `drug_schedule`, `is_ndps`, and `is_free_supply`. There is **no field to designate DPCO drugs** and **no ceiling price tracking**. Under the Drugs (Prices Control) Order, 2013, selling a National List of Essential Medicines (NLEM) formulation above the NPPA gazetted ceiling is a criminal offense under the Essential Commodities Act. A static ceiling overwrites historical ceilings, invalidating legal pre-WPI inventory.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
-  - Add to `catalog_items`: `is_dpco BOOLEAN NOT NULL DEFAULT FALSE`.
-  - Replaces static scalar price with an effective-dated historical ceiling ledger:
-    ```sql
-    CREATE TABLE catalog_dpco_ceiling_history (
-        ceiling_id UUID PRIMARY KEY,
-        drug_id UUID NOT NULL REFERENCES catalog_items(drug_id),
-        effective_from DATE NOT NULL,
-        effective_to DATE NULL,
-        ceiling_unit_price NUMERIC(10,4) NOT NULL,
-        gazette_notification_ref VARCHAR(64) NOT NULL,
-        CONSTRAINT uq_drug_effective_window UNIQUE (drug_id, effective_from)
-    );
-    ```
-  - Inbound GRN checks against the ceiling price effective at `batch.manufacturing_date` (normalized to `YYYY-MM-01` for `MM/YYYY` printed dates), preserving legal stock manufactured prior to annual April 1 NPPA WPI revisions under DPCO Rule 24.
-  - Statutory GST-Inclusive Ceiling Assertion:
-    $$\text{Assert: } \left(\frac{\text{batch.mrp}}{\text{batch.pack\_size}}\right) \le \left(\text{ceiling\_unit\_price} \times \left(1 + \frac{\text{batch.cgst\_rate} + \text{batch.sgst\_rate}}{100}\right)\right) + 0.01$$
+  In [ROUTED-DETAIL.md §1.8](ROUTED-DETAIL.md#18-drug-classification-ndps--zero-mrp-constraints-v166), `catalog_items` only has `drug_schedule`, `is_ndps`, and `is_free_supply`. There is **no field to designate DPCO drugs** and **no ceiling price tracking**. Under the Drugs (Prices Control) Order, 2013, selling a National List of Essential Medicines (NLEM) formulation above the NPPA gazetted ceiling is a criminal offense under the Essential Commodities Act.
+- **Hardened Technical Specification & Invariants:**
+  - Add to `catalog_items`: `is_dpco BOOLEAN NOT NULL DEFAULT FALSE` and `dpco_ceiling_unit_price NUMERIC(10,4) NULL`.
+  - Inbound GRN Ceiling Guard: When receiving stock via GRN, system asserts: `batch.mrp / pack_size <= catalog.dpco_ceiling_unit_price`. If violated, insert is rejected (`DPCO_OVERPRICING_HARD_BLOCK`).
   - Cashier Discount Hard-Block: Fulfills D-139 by evaluating `if (item.is_dpco) { block_cashier_discretionary_discount(); }`.
+- **Second-Order Ripple-Effect Guards:**
+  - *Pre-WPI Legal Inventory Invariant*: NPPA updates ceiling prices annually on April 1 based on the Wholesale Price Index (WPI). Under DPCO Rule 24 and Legal Metrology, batches manufactured prior to the price notification date remain legally billable at their printed MRP until expiry. The system validates ceiling prices **applicable at the batch's declared manufacturing date**, preventing wrongful bricking of legal pre-revision inventory.
 
-#### 10. Registered Pharmacist Physical Presence & Staged Dispensing Protocol
+#### 10. Registered Pharmacist Physical Presence & Lunch-Hour Dispensing Lock
 - **v1.6.6 Baseline ([§11 D-93](architecture_v1_6_6.md#11-roles--access-control)):**
   States cashiers cannot dispense Schedule H1/X without pharmacist sign-off.
 - **Statutory Gap & License Revocation Risk:**
-  Under Section 42 of the Pharmacy Act, 1948 and Rule 65(2) of the Drugs & Cosmetics Rules, 1945, dispensing ANY prescription medicine (including Schedule H chronic medicines like Metformin or Amlodipine) without the personal supervision of a Registered Pharmacist is illegal. Hard-blocking chronic maintenance items drives patients to competitors, while hard-blocking acute life-saving drugs creates medical negligence liability.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  Under Section 42 of the Pharmacy Act, 1948 and Rule 65(2) of the Drugs & Cosmetics Rules, 1945, dispensing ANY prescription medicine (including Schedule H chronic medicines like Metformin or Amlodipine) without the personal supervision of a Registered Pharmacist is illegal. When the pharmacist steps out for lunch, cashiers frequently continue dispensing Schedule H medicines. Decoy inspections by State Drug Licensing Authorities result in immediate store license suspensions.
+- **Hardened Technical Specification & Invariants:**
   - Implement a **Pharmacist Duty Toggle** on Counter 1 UI: `PHARMACIST_ON_DUTY` vs `PHARMACIST_AWAY`.
   - When toggled to `PHARMACIST_AWAY` (or after 15 minutes of pharmacist workstation lock):
     - System enters **OTC-Only Retail Mode**.
-    - Non-prescription OTC retail items remain 100% billable.
-  - **Two-Phase Staged Dispensing Queue**:
-    - Staff can scan and pack prescription items into bags tagged `STAGED_PENDING_PHARMACIST_RELEASE`.
-    - Creates an ephemeral **Stock Hold** (`reserved_base_units` with a 30-minute auto-expiry TTL).
-    - Available stock for other counters = `current_stock - reserved_base_units`.
-    - Does **NOT** mutate `prescriptions.cum_dispensed_base_units` and does **NOT** emit a `dispense` event until the Pharmacist returns and authenticates via Tier A Quick-PIN.
-    - If customer departs, the 30-minute TTL releases reserved stock with zero prescription corruption.
-  - **Emergency Stat Override**: Dedicated `[EMERGENCY STAT DISPENSE]` button unlocks single units of critical life-saving drugs (Salbutamol, Sorbitrate, Aspirin, Adrenaline) with mandatory prescription photo/attendant capture and regulatory audit log.
+    - Scanning any drug where `drug_schedule IN ('SCHEDULE_H', 'SCHEDULE_H1', 'SCHEDULE_X')` or `requires_prescription = TRUE` triggers a UI hard-block: *"Statutory Lock: Registered Pharmacist is away. Prescription dispensing prohibited under Pharmacy Act Sec 42."*
+    - Non-prescription OTC retail items (FMCG, bandages, personal care, ayurvedic OTC) remain 100% billable.
+    - Pharmacist resumes duty via Tier A Quick-PIN. Duty intervals log to `pharmacist_attendance_log` for regulatory audit.
+- **Second-Order Ripple-Effect Guards:**
+  - *Non-Destructive Line Dropping*: If a cashier is in the middle of scanning a mixed basket and the pharmacist steps away, checkout commit prompts: *"Registered Pharmacist is away. Prescription item {drug_name} cannot be dispensed. Drop prescription item and proceed with OTC checkout (Y/N)?"*, preventing cart deadlocks.
 
 #### 11. Physical Duplicate Prescription Locked Cabinet Slot Indexing
 - **v1.6.6 Baseline ([§10.3 D-86, D-88](architecture_v1_6_6.md#103-schedule-x--ndps-dual-prescription-custody--bound-ledger)):**
   Mandates digital scans of duplicate prescriptions (<250 KB WebP, AES-256 encrypted, 90d retention). [ROUTED-DETAIL.md §1.5](ROUTED-DETAIL.md#15-schedule-h1-register--schedule-x-running-ledger-table-schemas) defines `schedule_x_running_ledger`.
 - **Inspection Reality & Specification Gap:**
-  Rule 65(4) mandates that physical duplicate carbon copies of Schedule X prescriptions must be preserved in a locked box for 2 years. Standard direct thermal paper fades to blank in 6–12 months, causing statutory audit failure in month 18.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  Rule 65(4) mandates that physical duplicate carbon copies of Schedule X prescriptions must be preserved in a locked box for 2 years. During Drug Inspector audits, the inspector demands to hold the physical paper to verify doctor wet-ink signature. The digital ledger currently has no reference to where the physical prescription is filed in the physical cabinet.
+- **Hardened Technical Specification & Invariants:**
   - Add `physical_box_slot VARCHAR(32) NOT NULL` to `schedule_x_running_ledger` (format: `<STORE>-BOX-YYYYMM-XXXX`).
   - Thermal receipt printer spools a small physical filing adhesive sticker alongside the invoice:
     `[ SCHEDULE X PHYSICAL FILING STICKER ]`
     `Slot: BOX-202609-0142 | Date: 2026-09-24`
     `Patient: Suresh Kumar | Drug: Ketamine 10ml`
-  - Media Specification: Hardware deployment spec mandates **BPA-free Top-Coated Synthetic Thermal Labels** rated for a minimum 5-year legibility lifespan.
-  - Redundant Manual Stamp: UI prompts the pharmacist to write the 6-character slot index (e.g., `BOX-0142`) in wet ink directly onto the carbon copy header.
+  - The pharmacist sticks this onto the physical carbon copy and drops it into the assigned slot in the physical locked box. One-click POS lookup allows pulling the physical prescription in <30 seconds during inspection.
 - **Second-Order Ripple-Effect Guards:**
   - *Printer Jam Recovery*: Integrated into the audited `reprint` event workflow (D-124, D-137) with a dedicated UI action: `[Reprint Filing Sticker]`.
 
@@ -269,29 +218,29 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 - **v1.6.6 Baseline ([§6 D-49, D-170](architecture_v1_6_6.md#6-stock-inventory-lifecycle--batch-mechanics)):**
   Specifies damaged units route to quarantine, and damaged write-offs require photo, reason, and Manager Quick-PIN (D-170).
 - **Operational Reality & Shrinkage Leakage:**
-  During counter queues, a cashier cuts a 10-tablet blister to sell 3 loose tablets; 1 tablet drops to the floor or is crushed by scissors. Cashiers bypass the heavy photo/PIN protocol, accumulating physical vs. system stock discrepancies. Unrecorded destruction violates Section 17(5)(h) ITC reversal mandates.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  During counter queues, a cashier cuts a 10-tablet blister to sell 3 loose tablets; 1 tablet drops to the floor or is crushed by scissors. Under D-170, logging a write-off requires a smartphone photo and Manager Quick-PIN for a ₹1.50 tablet, causing queue stalls. Cashiers bypass the system by throwing the tablet away unrecorded, accumulating physical vs. system stock discrepancies.
+- **Hardened Technical Specification & Invariants:**
   - Introduce **In-Line Fractional Cutting Loss** directly inside the POS cart UI:
     - Cashier clicks `[+] Cutting Loss` on a fractional blister line.
     - Constraints: Allowed *only* during fractional sales; max 2 base units per line item; total loss value capped at $\le \text{₹}20$ per sale.
-    - Strictly prohibited on Schedule X and NDPS drugs.
+    - Strictly prohibited on Schedule X and NDPS drugs (all NDPS loss requires dual-custody Tier B password).
     - Automatically emits `stock-move: cutting-spoilage` without requiring supervisor PIN interruption.
-  - *Section 17(5)(h) ITC Reversal Compliance*: `stock-move: cutting-spoilage` payload computes and records `itc_reversal_cgst` and `itc_reversal_sgst` for automated feed into monthly GSTR-3B Table 4(B)(2).
 - **Second-Order Ripple-Effect Guards:**
   - *Anti-Theft Cumulative Shift Cap*: To prevent dishonest cashiers from skimming tablets across dozens of transactions, in-line cutting loss is governed by a **Cumulative Shift Ceiling of ₹50 or 5 occurrences per cashier shift**. Exceeding the cap locks the button and requires Store Manager Quick-PIN.
+  - *Disambiguation Invariant*: Decision D-170 applies to all shelf-level write-offs, full packs, and damage $> \text{₹}20$; Item 12 applies strictly to counter fractional scissors spoilage.
 
 #### 13. Blind Cash Count Variance Recount & Supervisor Dispute Workflow
 - **v1.6.6 Baseline ([§13 D-103, D-104](architecture_v1_6_6.md#13-shift-management--day-end-till-reconciliation-z-report)):**
   Defines blind cash declaration and automated variance calculation: $\text{Variance} = \text{Declared Cash} - (\text{Opening Float} + \text{Cash Sales} - \text{Cash Refunds})$.
 - **Operational Reality & Specification Gap:**
-  In [ROUTED-DETAIL.md §1.6](ROUTED-DETAIL.md#16-shift-session--z-report-table-schemas), simple digit transpositions commit into permanent shortages. Mandatory manager PIN sign-offs deadlock shift handovers at late-night close (11:30 PM) if the manager is absent.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  In [ROUTED-DETAIL.md §1.6](ROUTED-DETAIL.md#16-shift-session--z-report-table-schemas), if a cashier accidentally mistypes `4500` instead of `5400` (simple digit transposition), the shift immediately commits into `cash_variance = -900.00`. Immutable Z-Reports lock this shortage, resulting in wrongful salary deductions.
+- **Hardened Technical Specification & Invariants:**
   - **Two-Stage Blind Count Protocol**:
     1. Cashier enters physical cash breakdown (notes and coins).
-    2. If $|\text{Variance}| > \text{₹}200$: System displays: *"A cash discrepancy was detected. Please recount physical drawer cash and re-enter count."* The system **strictly conceals** the system expected figure and the direction of the variance.
+    2. If $|\text{Variance}| > \text{₹}200$: System displays: *"A cash discrepancy was detected. Please recount physical drawer cash and re-enter count."* The system **strictly conceals** the system expected figure and the direction of the variance, preserving 100% blind integrity against theft.
     3. Cashier recounts drawer and submits Count 2.
-    4. If variance still exceeds ₹200: Manager signs off via Tier A Quick-PIN.
-  - *Unattended Shift Handover*: If supervisor is absent, cashier triggers `CASHIER_UNATTENDED_DISPUTE_CLOSE` after a 5-minute timeout. Register unlocks for the incoming shift, an instant SMS alert dispatches to the Store Manager, and the shift is flagged as `PENDING_MORNING_AUDIT`.
+    4. If variance still exceeds ₹200: Manager must sign off via Tier A Quick-PIN, entering supervisory remarks (`"Physical cash recounted in presence of manager; variance confirmed"`).
+  - Shift record stores `recount_attempts INT DEFAULT 1` and `supervisor_notes`.
 - **Second-Order Ripple-Effect Guards:**
   - *Deadlock Prevention*: Recount attempts are hard-capped at **2 attempts**. Persistent variance transitions shift state to `CLOSED_DISPUTED`, immediately unlocking the register for the incoming shift.
 
@@ -299,14 +248,17 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 - **v1.6.6 Baseline ([§17 D-165](architecture_v1_6_6.md#17-deployment-safety--edge-rollout)):**
   Defines tiered disk responses: 85% log pruning, 90% degraded write mode, 98% emergency read-only mode. [ROUTED-DETAIL.md §10.5](ROUTED-DETAIL.md#105-tiered-disk-space-health-response-automation-v166) specifies that 98% halts checkouts.
 - **Edge Risk & Specification Gap:**
-  Edge SSDs fill with synced logs, halting sales. OS write-caching can cause data loss if USB is unplugged prematurely. Pruning unsynced prescription images violates Rule 65.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  In remote stores with slow WAN, if disk space reaches 98%, checkout commits halt. Turning patients away because an edge SSD is full of old synced logs is unacceptable. A non-technical store manager cannot run SQL commands or navigate Windows system folders.
+- **Hardened Technical Specification & Invariants:**
   - Automated USB Evacuation Workflow:
     - At 90% disk pressure, POS status bar shows an amber prompt: *"Disk 90% full. Insert formatted USB drive (min 16GB) to archive data."*
-    - Dynamic Drive Discovery: PowerShell/WMI queries detect removable storage mount points dynamically (`Get-Volume | Where-Object { $_.DriveType -eq 'Removable' }`), eliminating hardcoded drive letters.
-    - Statutory Retention Pre-Condition: Daemon strictly refuses to prune any prescription image locally unless `synced_to_central == TRUE` AND `central_acknowledged == TRUE`.
-    - Win32 Kernel Sector Flush: Executes `FlushFileBuffers()` to commit all sectors before unlinking local files.
-    - Emits `storage-usb-evacuation` audit event.
+    - Upon inserting a USB drive, the POS UI presents: `[Evacuate Synced Data to USB]`.
+    - Edge daemon:
+      1. Copies encrypted prescription photos older than 90 days having `synced_to_central == true` and rotated application logs older than 7 days to `E:\medpos_archive\`.
+      2. Validates SHA-256 hashes of the files on the USB drive against database hashes.
+      3. Only upon 100% cryptographic verification, unlinks the local edge copies.
+      4. Emits `storage-usb-evacuation` audit event.
+    - Reclaims 15–30 GB in under 5 minutes without technical support.
 - **Second-Order Ripple-Effect Guards:**
   - *BadUSB Malware Defense*: Windows Group Policy strictly disables AutoRun and AutoPlay on all USB mass storage devices. The daemon performs **outward-only read/write operations**; it executes zero binaries or scripts from the USB drive.
 
@@ -314,22 +266,17 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 - **v1.6.6 Baseline ([§5 D-40, D-41](architecture_v1_6_6.md#central-ingestion-atomicity--poison-pill-quarantine)):**
   Isolates malformed events into `central_sync_quarantine` with `sync-quarantine-tombstone` in `central_events`.
 - **Distributed Sync Gap & Cascade Failure Risk:**
-  When an upstream GRN is quarantined, downstream sales fail foreign key checks, triggering cascade quarantines. Storing negative stock violates Postgres check constraints. If a quarantined GRN entered the wrong drug identity, auto-remapping stub batches corrupts clinical dispense records.
-- **Hardened Technical Specification & Invariants (v1.6.7):**
+  If an inventory-inflating event (`grn` Event 101) is quarantined on Central due to a malformed distributor field, but succeeded on the store, the store subsequently sells those units in Events 102, 103, 104 (`sale`). When Central ingests Events 102-104, foreign key constraints or batch lookup queries fail because the batch from Event 101 was never created. This causes Central to crash or cascade-quarantine 50 valid consumer sales.
+- **Hardened Technical Specification & Invariants:**
   - **Synthetic Batch Stub Invariant**:
-    - Central auto-provisions a **Synthetic Placeholder Batch** in `central_batches` with `status: PENDING_GRN_QUARANTINE_RESOLUTION`.
-    - Preserves PostgreSQL's `chk_non_negative_stock` constraint by keeping `current_stock = 0` and recording shortages in a dedicated column:
-      ```sql
-      ALTER TABLE central_batches 
-        ADD COLUMN is_quarantine_stub BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN quarantine_deficit_base_units INTEGER NOT NULL DEFAULT 0 CHECK (quarantine_deficit_base_units >= 0);
-      ```
-    - Flagged with `is_quarantine_stub = TRUE` and filtered from GSTR-1 and gross margin tables until resolved.
-    - Quarantine alert on Central Admin Dashboard escalates to:
-      `CRITICAL: GRN Event 101 quarantined with N downstream sales pending reconciliation.`
-  - **Remediation Boundary Guard**:
-    - If GRN fix preserves `drug_id` (typo in batch number or distributor), Central auto-remaps stub batches atomically.
-    - If GRN fix changes `drug_id`, auto-remap is hard-blocked, flagging transactions for clinical review and formal corrective adjustments.
+    - Central event ingestion consumer logic: If a `sale`, `dispense`, or `stock-move` references a `(drug_id, batch_no)` that does not exist in Central batch tables because an upstream `grn` event was quarantined:
+      1. Central does NOT reject or quarantine the `sale` events.
+      2. Central auto-provisions a **Synthetic Placeholder Batch** in `central_batches` with `status: PENDING_GRN_QUARANTINE_RESOLUTION` and `provisional_stock = -qty_sold`.
+      3. Downstream sales commit cleanly to Central reporting tables.
+      4. Quarantine alert on Central Admin Dashboard escalates to:
+         `CRITICAL: GRN Event 101 quarantined with N downstream sales pending reconciliation.`
+- **Second-Order Ripple-Effect Guards:**
+  - *Atomic Remediation Re-mapping*: Synthetic stub batches are explicitly tagged: `is_quarantine_stub: true`, `quarantined_event_id: <uuid>`. When Central Admin remediates the GRN (e.g. correcting a batch number typo), Central updates both the GRN and all downstream stub-dependent events in a single atomic database transaction (`BEGIN...COMMIT`).
 
 ---
 
@@ -337,21 +284,21 @@ Items are sequenced into **four cautious implementation tiers**. Each tier build
 
 | Item # | Area / Enhancement | Track | Impact | Complexity | Target Milestone | Architectural Focus |
 |---|---|:---:|:---:|:---:|:---:|---|
-| **#1** | **GS1 2D DataMatrix Parser** | Track A | Critical (Operations) | Low | **v1.6.7 (Pilot Hardening Patch)** | CDSCO Top 300 2D parsing & bounded-prefix batch selection |
-| **#2** | **Trade Schemes & Landed Cost** | Track A | Critical (Financial) | Medium | **v1.6.7 (Pilot Hardening Patch)** | Volume bonus units, dual UOM landed cost, net RTV rate |
-| **#3** | **Distributor Quarantine Totes (Q2)**| Track A | High (Logistics) | Low | **v1.6.7 (Pilot Hardening Patch)** | Resolves §18 Q2; logical shelf bins & pre-GRN discrepancy DN |
-| **#4** | **UPI Timeout & Reversal Race (Q1)**| Track A | High (Financial) | Medium | **v1.6.7 (Pilot Hardening Patch)** | Resolves §18 Q1; 60s timeout, <STORE>-ADV-... advance vouchers |
-| **#5** | **Digital Tender Return Policy** | Track A | High (Financial) | Low | **v1.6.7 (Pilot Hardening Patch)** | Chargeback defense; offline gateway reversal staging queue |
-| **#6** | **Worker HA & Reboot Fencing** | Track A | High (Reliability) | Medium | **v1.6.7 (Pilot Hardening Patch)** | Multi-IP SAN certs, Counter 1 watchdog, active-session witness |
-| **#7** | **Migration Disk Space Assert** | Track A | High (DevOps) | Low | **v1.6.7 (Pilot Hardening Patch)** | Calibrated 0.5x compressed formula & hotfix bypass flag |
-| **#8** | **CDSCO Recall Patient Trace** | Track A | Critical (Legal) | Medium | **v1.6.7 (Pilot Hardening Patch)** | Retrospective buyer query, DPDP masked SMS, static DLT |
-| **#9** | **DPCO Statutory Ceiling Price** | Track A | Critical (Legal) | Low | **v1.6.7 (Pilot Hardening Patch)** | Effective-dated WPI history, GST-inclusive ceiling assertion |
-| **#10**| **Pharmacist Presence Lock** | Track A | Critical (Legal) | Low | **v1.6.7 (Pilot Hardening Patch)** | Section 42 Pharmacy Act duty toggle, 30m TTL staged queue |
-| **#11**| **Duplicate Filing Box Indexing** | Track A | High (Compliance) | Low | **v1.6.7 (Pilot Hardening Patch)** | Physical slot assignment, 5-yr top-coated synthetic labels |
-| **#12**| **In-Line Cutting Loss Protocol** | Track A | Medium (Operations) | Low | **v1.6.7 (Pilot Hardening Patch)** | Fast-track scissors loss, GSTR-3B Sec 17(5)(h) ITC tracking |
-| **#13**| **Blind Recount & Dispute Close** | Track A | Medium (Operations) | Low | **v1.6.7 (Pilot Hardening Patch)** | Two-attempt blind count, 5m unattended dispute close |
-| **#14**| **Emergency USB Storage Evac** | Track A | High (Disaster Recovery)| Low | **v1.6.7 (Pilot Hardening Patch)** | Dynamic WMI mount, Win32 sector flush, sync-ack assertion |
-| **#15**| **Poison-Pill Stub Batch Guard** | Track A | High (Reliability) | Medium | **v1.6.7 (Pilot Hardening Patch)** | Central stub provisioning isolating downstream sales |
+| **#1** | **GS1 2D DataMatrix Parser** | Track A | Critical (Operations) | Low | **v1.7 (Pilot Hardening)** | CDSCO Top 300 2D parsing & longest-prefix batch selection |
+| **#2** | **Trade Schemes & Landed Cost** | Track A | Critical (Financial) | Medium | **v1.7 (Pilot Hardening)** | 10+2 free goods, landed cost derivation & RTV gross rate |
+| **#3** | **Distributor Quarantine Totes (Q2)**| Track A | High (Logistics) | Low | **v1.7 (Pilot Hardening)** | Resolves §18 Q2; segregated RTV bins & pre-GRN rejection |
+| **#4** | **UPI Timeout & Reversal Race (Q1)**| Track A | High (Financial) | Medium | **v1.7 (Pilot Hardening)** | Resolves §18 Q1; 60s timeout, dual-tender collision lock |
+| **#5** | **Digital Tender Return Policy** | Track A | High (Financial) | Low | **v1.7 (Pilot Hardening)** | Chargeback defense; digital returns default to Store Credit |
+| **#6** | **Worker HA & Reboot Fencing** | Track A | High (Reliability) | Medium | **v1.7 (Pilot Hardening)** | Dual-host probing list & Counter 1 demotion hook |
+| **#7** | **Migration Disk Space Assert** | Track A | High (DevOps) | Low | **v1.7 (Pilot Hardening)** | Free space capacity formula guarding pre-flight `pg_dump` |
+| **#8** | **CDSCO Recall Patient Trace** | Track A | Critical (Legal) | Medium | **v1.7 (Pilot Hardening)** | Retrospective buyer query & Pharmacist-gated alerts |
+| **#9** | **DPCO Statutory Ceiling Price** | Track A | Critical (Legal) | Low | **v1.7 (Pilot Hardening)** | NLEM ceiling validation at manufacture date & discount lock |
+| **#10**| **Pharmacist Presence Lock** | Track A | Critical (Legal) | Low | **v1.7 (Pilot Hardening)** | Section 42 Pharmacy Act duty toggle; OTC-only retail mode |
+| **#11**| **Duplicate Filing Box Indexing** | Track A | High (Compliance) | Low | **v1.7 (Pilot Hardening)** | Physical slot assignment & thermal adhesive sticker spool |
+| **#12**| **In-Line Cutting Loss Protocol** | Track A | Medium (Operations) | Low | **v1.7 (Pilot Hardening)** | Fast-track scissors loss capped at ₹50/shift per cashier |
+| **#13**| **Blind Recount & Dispute Close** | Track A | Medium (Operations) | Low | **v1.7 (Pilot Hardening)** | Two-attempt blind count preventing accidental salary cuts |
+| **#14**| **Emergency USB Storage Evac** | Track A | High (Disaster Recovery)| Low | **v1.7 (Pilot Hardening)** | Outward-only USB archive offload with SHA-256 validation |
+| **#15**| **Poison-Pill Stub Batch Guard** | Track A | High (Reliability) | Medium | **v1.7 (Pilot Hardening)** | Central stub provisioning isolating downstream sales |
 | **§1.1**| **Automated Supplier Settlement**| Track B | High (Financial) | High | **Phase 2.0 (Chain Scale)** | Distributor EDI bridges (Marg/MediVision) & central AP |
 | **§1.2**| **Central In-Transit Pool** | Track B | High (Logistics) | High | **Phase 2.0 (Chain Scale)** | Regional warehouse hub routing & 3PL freight claims |
 | **§2.1**| **B2B E-Invoicing (IRN)** | Track B | Medium (Compliance) | High | **Phase 2.0 (Chain Scale)** | Live NIC/GSP API handshake & signed QR generation |
